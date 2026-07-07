@@ -60,3 +60,5 @@ htmlcov/
 
 # Claude Code (config/runtime local, não faz parte do projeto)
 .claude/
+
+.vercel

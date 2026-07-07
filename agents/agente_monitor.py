@@ -1,0 +1,410 @@
+# peo_bd/agents/agente_monitor.py
+# Agente 5 — Monitor de Rastreio Consolidado (Módulo 6)
+# Responsabilidade: centraliza status de entregas de DHL, UPS e frota própria
+# num único painel, sem que Timóteo ou Carlos precisem acessar portais individuais.
+# Restrição da BD: sem API externa — consulta portais via scraping estruturado
+# ou recebe updates via e-mail/EDI e os normaliza.
+
+import logging
+import re
+from datetime import datetime, timedelta
+from typing import Any
+
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, and_, func
+from sqlalchemy.orm import selectinload
+
+from core.config import settings
+from core.historico import HistoricoService
+from core.models import Alerta, EventoRastreio, Remessa, ProgramacaoColeta, Onda
+
+logger = logging.getLogger(__name__)
+
+# ── Status normalizados (mapa de cada transportadora → status interno) ────────
+
+STATUS_MAP_DHL = {
+    "shipment picked up":       "coletado",
+    "in transit":               "em_transito",
+    "out for delivery":         "em_rota_entrega",
+    "delivered":                "entregue",
+    "delivery attempt failed":  "tentativa",
+    "returned to sender":       "devolvido",
+    "customs clearance":        "em_transito",
+}
+
+STATUS_MAP_UPS = {
+    "package picked up":        "coletado",
+    "in transit":               "em_transito",
+    "out for delivery":         "em_rota_entrega",
+    "delivered":                "entregue",
+    "delivery attempt":         "tentativa",
+    "returned":                 "devolvido",
+}
+
+STATUS_MAP_FROTA = {
+    "saiu":         "em_rota_entrega",
+    "entregue":     "entregue",
+    "tentativa":    "tentativa",
+    "retornou":     "devolvido",
+    "aguardando":   "aguardando",
+}
+
+
+class AgenteMonitor:
+    """
+    Agente 5 — Monitor de Rastreio Consolidado.
+
+    Como funciona sem API direta:
+    - DHL: scraping da página de rastreio pública (código de rastreio por remessa)
+    - UPS:  idem
+    - Frota própria: motorista registra via formulário web simples (endpoint /rastreio/update)
+
+    O método `processar_update_manual` é chamado quando:
+      - Um motorista submete update via formulário
+      - Um e-mail de confirmação da transportadora é recebido e parseado
+      - Timóteo/Carlos inserem manualmente no painel
+
+    O método `verificar_sla` roda a cada ciclo e gera alertas automáticos
+    para remessas em atraso ou sem atualização há X horas.
+    """
+
+    def __init__(self, db: AsyncSession):
+        self.db = db
+        self.historico = HistoricoService(db)
+
+    # ── Update de rastreio ────────────────────────────────────────────────────
+
+    async def processar_update_manual(
+        self,
+        numero_remessa: str,
+        status_raw: str,
+        transportadora: str,
+        localizacao: str | None = None,
+        detalhe: str | None     = None,
+        evento_em: datetime | None = None,
+        fonte: str = "manual",
+    ) -> dict[str, Any]:
+        """
+        Recebe um update de rastreio (manual, e-mail parseado ou scraping)
+        e normaliza para o schema interno.
+        """
+        remessa = await self._get_remessa(numero_remessa)
+        if not remessa:
+            raise ValueError(f"Remessa não encontrada: {numero_remessa}")
+
+        status_norm = self._normalizar_status(status_raw, transportadora)
+
+        evento = EventoRastreio(
+            remessa_id      = remessa.id,
+            transportadora  = transportadora.upper(),
+            codigo_rastreio = numero_remessa,
+            status          = status_norm,
+            localizacao     = localizacao,
+            detalhe         = detalhe,
+            evento_em       = evento_em or datetime.utcnow(),
+            fonte           = fonte,
+        )
+        self.db.add(evento)
+
+        # Captura status anterior antes de atualizar
+        status_anterior = remessa.status
+
+        # Atualiza status da remessa
+        remessa.status = status_norm
+        if status_norm == "entregue":
+            await self._resolver_alertas_remessa(remessa.id)
+
+        # Gera alerta se tentativa de entrega falhou
+        if status_norm == "tentativa":
+            await self._criar_alerta_tentativa(remessa)
+
+        await self.historico.registrar(
+            tipo_evento="mudanca_status",
+            origem="monitor",
+            ator_tipo="agente_ia",
+            ator_nome="Agente Monitor",
+            remessa_id=remessa.id,
+            cd_id=remessa.cd_id,
+            descricao=(
+                f"Remessa {numero_remessa} — status atualizado: "
+                f"{status_anterior} → {status_norm} "
+                f"[{transportadora.upper()}, fonte: {fonte}]"
+            ),
+            resultado="sucesso",
+            gravidade="alerta" if status_norm == "tentativa" else ("info" if status_norm == "entregue" else None),
+            dados_extra={
+                "status_anterior": status_anterior,
+                "status_novo": status_norm,
+                "transportadora": transportadora,
+                "localizacao": localizacao,
+                "fonte": fonte,
+            },
+        )
+
+        await self.db.commit()
+
+        return {
+            "remessa": numero_remessa,
+            "status":  status_norm,
+            "fonte":   fonte,
+        }
+
+    async def processar_email_confirmacao(
+        self, corpo_email: str, transportadora: str
+    ) -> list[dict]:
+        """
+        Parseia e-mail de confirmação da transportadora e extrai:
+        - Protocolo
+        - Veículo confirmado
+        - Horário real de coleta
+        """
+        resultados = []
+
+        # Extrai protocolo (padrão: BD-XXXXXXXX)
+        protocolo_match = re.search(r"BD-[A-Z0-9]{8}", corpo_email)
+        protocolo = protocolo_match.group(0) if protocolo_match else None
+
+        # Extrai horário (padrão: HH:MM ou HHhMM)
+        horario_match = re.search(r"(\d{1,2})[h:](\d{2})", corpo_email)
+        horario = None
+        if horario_match:
+            try:
+                horario = datetime.now().replace(
+                    hour=int(horario_match.group(1)),
+                    minute=int(horario_match.group(2))
+                ).time()
+            except ValueError:
+                pass
+
+        # Extrai placa (padrão brasileiro AAA-0000 ou AAA0A00)
+        placa_match = re.search(r"[A-Z]{3}[-]?\d{4}|[A-Z]{3}\d[A-Z]\d{2}", corpo_email)
+        placa = placa_match.group(0) if placa_match else None
+
+        if protocolo:
+            # Atualiza programação de coleta
+            prog_res = await self.db.execute(
+                select(ProgramacaoColeta).where(
+                    ProgramacaoColeta.protocolo == protocolo
+                )
+            )
+            prog = prog_res.scalar_one_or_none()
+            if prog:
+                prog.confirmado_em       = datetime.utcnow()
+                prog.status_envio        = "confirmado"
+                prog.veiculo_confirmado  = placa
+                await self.db.commit()
+                resultados.append({
+                    "protocolo": protocolo,
+                    "placa":     placa,
+                    "horario":   str(horario) if horario else None,
+                    "status":    "confirmado",
+                })
+
+        return resultados
+
+    # ── Verificação de SLA ────────────────────────────────────────────────────
+
+    async def verificar_sla(self) -> dict[str, Any]:
+        """
+        Roda periodicamente (ex: a cada 2h via scheduler).
+        Gera alertas para:
+        - Remessas em rota sem update há mais de 4h
+        - Coletas não confirmadas em mais de SLA da transportadora
+        - Remessas com janela de entrega vencida e status != entregue
+        """
+        alertas_gerados = 0
+        agora = datetime.utcnow()
+
+        # 1. Coletas não confirmadas dentro do SLA
+        resultado = await self.db.execute(
+            select(ProgramacaoColeta)
+            .options(
+                selectinload(ProgramacaoColeta.transportadora),
+                selectinload(ProgramacaoColeta.onda)
+                    .selectinload(Onda.plano),
+            )
+            .where(
+                and_(
+                    ProgramacaoColeta.status_envio == "enviado",
+                    ProgramacaoColeta.confirmado_em.is_(None),
+                )
+            )
+        )
+        programacoes = resultado.scalars().all()
+
+        for prog in programacoes:
+            if not prog.enviado_em:
+                continue
+            horas_sem_resposta = (agora - prog.enviado_em).total_seconds() / 3600
+            sla_h = prog.transportadora.sla_resposta_h if prog.transportadora else 2
+
+            if horas_sem_resposta > sla_h:
+                await self._criar_alerta_raw(
+                    tipo       = "coleta_sem_confirmacao",
+                    severidade = "alta",
+                    titulo     = f"Coleta sem confirmação — {prog.onda.nome if prog.onda else prog.id}",
+                    descricao  = (
+                        f"Programação enviada há {horas_sem_resposta:.1f}h para "
+                        f"{prog.transportadora.nome if prog.transportadora else 'transportadora'} "
+                        f"sem confirmação de veículo. SLA: {sla_h}h."
+                    ),
+                    cd_id      = prog.onda.plano.cd_id if prog.onda and prog.onda.plano else None,
+                )
+                alertas_gerados += 1
+
+        # 2. Remessas em rota sem update há mais de 4h
+        resultado2 = await self.db.execute(
+            select(Remessa).where(
+                Remessa.status.in_(["em_transito", "em_rota_entrega", "coletado"])
+            )
+        )
+        em_rota = resultado2.scalars().all()
+
+        for remessa in em_rota:
+            ultimo_evento = await self._ultimo_evento(remessa.id)
+            if ultimo_evento:
+                horas = (agora - ultimo_evento.capturado_em).total_seconds() / 3600
+                if horas > 4:
+                    await self._criar_alerta_remessa(
+                        tipo       = "sem_atualizacao_rota",
+                        severidade = "media",
+                        titulo     = f"Sem atualização há {horas:.0f}h — {remessa.numero_remessa}",
+                        descricao  = (
+                            f"Remessa {remessa.numero_remessa} está com status "
+                            f"'{remessa.status}' mas não tem eventos de rastreio "
+                            f"há {horas:.0f}h. Verifique com a transportadora."
+                        ),
+                        remessa    = remessa,
+                    )
+                    alertas_gerados += 1
+
+        await self.db.commit()
+        return {"alertas_gerados": alertas_gerados, "em_rota": len(em_rota)}
+
+    # ── Dashboard consolidado ─────────────────────────────────────────────────
+
+    async def dashboard(self, cd_id: int | None = None) -> dict[str, Any]:
+        """
+        Retorna visão consolidada do dia para o painel de Timóteo e Carlos.
+        """
+        filtro = [True]
+        if cd_id:
+            filtro.append(Remessa.cd_id == cd_id)
+
+        contagens = {}
+        for status in ["novo", "planejado", "coletado", "em_transito",
+                       "em_rota_entrega", "entregue", "tentativa", "devolvido"]:
+            res = await self.db.execute(
+                select(func.count(Remessa.id)).where(
+                    and_(Remessa.status == status, *filtro)
+                )
+            )
+            contagens[status] = res.scalar() or 0
+
+        # Alertas não resolvidos por severidade
+        filtro_alertas = [True]
+        if cd_id:
+            filtro_alertas.append(Alerta.cd_id == cd_id)
+
+        alertas = {}
+        for sev in ["critica", "alta", "media", "baixa"]:
+            res = await self.db.execute(
+                select(func.count(Alerta.id)).where(
+                    and_(
+                        Alerta.severidade == sev,
+                        Alerta.resolvido  == False,
+                        *filtro_alertas,
+                    )
+                )
+            )
+            alertas[sev] = res.scalar() or 0
+
+        # OTIF do dia (entregues / (entregues + tentativa + devolvido))
+        total_fin = contagens["entregue"] + contagens["tentativa"] + contagens["devolvido"]
+        otif = (contagens["entregue"] / total_fin * 100) if total_fin > 0 else 0.0
+
+        return {
+            "remessas":      contagens,
+            "alertas":       alertas,
+            "otif_pct":      round(otif, 1),
+            "meta_otif_pct": settings.META_OTIF_PCT * 100,
+            "gerado_em":     datetime.utcnow().isoformat(),
+        }
+
+    # ── Helpers ───────────────────────────────────────────────────────────────
+
+    def _normalizar_status(self, status_raw: str, transportadora: str) -> str:
+        raw_lower = status_raw.lower().strip()
+        mapa = {
+            "DHL":      STATUS_MAP_DHL,
+            "UPS":      STATUS_MAP_UPS,
+            "FROTA_BD": STATUS_MAP_FROTA,
+        }.get(transportadora.upper(), {})
+
+        for chave, valor in mapa.items():
+            if chave in raw_lower:
+                return valor
+        return raw_lower  # retorna o raw se não mapear
+
+    async def _criar_alerta_tentativa(self, remessa: Remessa) -> None:
+        await self._criar_alerta_raw(
+            tipo       = "tentativa_entrega",
+            severidade = "alta",
+            titulo     = f"Tentativa de entrega falhou — {remessa.numero_remessa}",
+            descricao  = (
+                f"A transportadora registrou tentativa sem sucesso para "
+                f"{remessa.cliente.razao_social if remessa.cliente else 'N/D'}. "
+                f"Acione o cliente e reagende."
+            ),
+            remessa_id = remessa.id,
+            cliente_id = remessa.cliente_id,
+            cd_id      = remessa.cd_id,
+        )
+
+    async def _criar_alerta_remessa(
+        self, tipo: str, severidade: str, titulo: str, descricao: str,
+        remessa: Remessa
+    ) -> None:
+        await self._criar_alerta_raw(
+            tipo       = tipo,
+            severidade = severidade,
+            titulo     = titulo,
+            descricao  = descricao,
+            remessa_id = remessa.id,
+            cliente_id = remessa.cliente_id,
+            cd_id      = remessa.cd_id,
+        )
+
+    async def _criar_alerta_raw(self, **kwargs) -> None:
+        alerta = Alerta(**kwargs)
+        self.db.add(alerta)
+
+    async def _resolver_alertas_remessa(self, remessa_id: int) -> None:
+        res = await self.db.execute(
+            select(Alerta).where(
+                and_(
+                    Alerta.remessa_id == remessa_id,
+                    Alerta.resolvido  == False,
+                )
+            )
+        )
+        for alerta in res.scalars():
+            alerta.resolvido    = True
+            alerta.resolvido_em = datetime.utcnow()
+
+    async def _ultimo_evento(self, remessa_id: int) -> EventoRastreio | None:
+        res = await self.db.execute(
+            select(EventoRastreio)
+            .where(EventoRastreio.remessa_id == remessa_id)
+            .order_by(EventoRastreio.capturado_em.desc())
+            .limit(1)
+        )
+        return res.scalar_one_or_none()
+
+    async def _get_remessa(self, numero: str) -> Remessa | None:
+        res = await self.db.execute(
+            select(Remessa)
+            .options(selectinload(Remessa.cliente))
+            .where(Remessa.numero_remessa == numero)
+        )
+        return res.scalar_one_or_none()

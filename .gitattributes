@@ -1,0 +1,17 @@
+# Normaliza line endings: LF no repositório, checkout automático por plataforma
+* text=auto
+
+# Forçar LF para arquivos Python e configs (compatibilidade Linux/Vercel)
+*.py    text eol=lf
+*.json  text eol=lf
+*.sql   text eol=lf
+*.html  text eol=lf
+*.txt   text eol=lf
+*.md    text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+
+# Binários — não converter
+*.xlsx  binary
+*.xls   binary
+*.db    binary

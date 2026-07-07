@@ -1,0 +1,28 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/main.py",
+      "use": "@vercel/python",
+      "config": {
+        "maxLambdaSize": "50mb",
+        "includeFiles": [
+          "frontend/**",
+          "core/**",
+          "agents/**",
+          "data/demo/**",
+          "scripts/**"
+        ]
+      }
+    }
+  ],
+  "routes": [
+    { "src": "/(.*)", "dest": "/api/main.py" }
+  ],
+  "crons": [
+    {
+      "path": "/api/resolvedor/executar",
+      "schedule": "0 6 * * *"
+    }
+  ]
+}

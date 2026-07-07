@@ -1,0 +1,62 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Virtualenv
+venv/
+.venv/
+env/
+
+# Variáveis de ambiente (NUNCA subir chaves)
+.env
+.env.*
+!.env.example
+
+# Banco de dados local (SQLite — dados de desenvolvimento)
+data/db/
+*.db
+*.sqlite
+*.sqlite3
+data/db/*.db-shm
+data/db/*.db-wal
+
+# Uploads e outputs gerados localmente
+data/uploads/
+data/outputs/
+
+# Logs
+*.log
+logs/
+server.log
+server.err
+
+# macOS / Windows
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# IDEs
+.vscode/
+.idea/
+*.suo
+*.user
+
+# Pytest / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# mypy
+.mypy_cache/
+
+# Temporários
+*.tmp
+*.bak
+*.swp
+
+# Claude Code (config/runtime local, não faz parte do projeto)
+.claude/

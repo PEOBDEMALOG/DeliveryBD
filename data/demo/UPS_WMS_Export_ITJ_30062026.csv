@@ -1,0 +1,19 @@
+ID_UPS,Destinatário,UF,Serviço,Peso,Volumes,NF,Prazo SLA
+U-66001,Hospital Regional de Itajaí,SC,EXPRESS,88,3,NF-30201,ATA D+3  03/07/2026
+U-66002,Hospital Regional de Itajaí,SC,EXPRESS,82,2,NF-30202,ATA D+3  03/07/2026
+U-66003,Hospital Municipal de Blumenau,SC,EXPRESS,65,2,NF-30203,ATA D+3  03/07/2026
+U-66004,Hospital Municipal de Blumenau,SC,EXPRESS,72,2,NF-30204,Normal
+U-66005,Hospital São José Joinville,SC,STANDARD,102,3,NF-30205,Normal
+U-66006,Hospital São José Joinville,SC,STANDARD,98,3,NF-30206,Normal
+U-66007,Laboratório Advance Florianópolis,SC,STANDARD,138,4,NF-30207,Normal
+U-66008,Laboratório Advance Florianópolis,SC,STANDARD,145,4,NF-30208,Normal
+U-66009,UFSC Hospital Universitário,SC,STANDARD,178,5,NF-30209,ATA D+8  08/07/2026
+U-66010,UFSC Hospital Universitário,SC,STANDARD,182,5,NF-30210,ATA D+8  08/07/2026
+U-66011,Hospital Regional de Itajaí,SC,EXPRESS,75,2,Pendente,Normal
+U-66012,Hospital Municipal de Blumenau,SC,EXPRESS,68,2,NF-30212,Normal
+U-66013,Laboratório Advance Florianópolis,SC,STANDARD,135,4,NF-30213,ATA D+15 15/07/2026
+U-66014,Hospital São José Joinville,SC,STANDARD,95,3,NF-30214,Normal
+U-66015,UFSC Hospital Universitário,SC,STANDARD,170,5,NF-30215,Normal
+U-66016,Laboratório Advance Florianópolis,SC,STANDARD,142,4,NF-30216,Normal
+U-66017,Hospital Regional de Itajaí,SC,EXPRESS,80,2,NF-30217,ATA D+3  03/07/2026
+U-66018,Hospital Municipal de Blumenau,SC,EXPRESS,63,2,NF-30218,Normal

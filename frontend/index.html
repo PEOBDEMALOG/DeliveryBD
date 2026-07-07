@@ -1,0 +1,3393 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PEO-BD — Portal de Expedição Outbound | Becton Dickinson</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="contingencia-db.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bd-blue:        #005A9C;
+      --bd-blue-light:  #0066B3;
+      --bd-orange:      #FF6600;
+      --bd-orange-dark: #E05300;
+      --bd-green:       #00A650;
+      --bd-dark:        #212529;
+      --bd-gray:        #F4F4F4;
+      --bd-gray-light:  #E9ECEF;
+      --bd-white:       #FFFFFF;
+    }
+    [x-cloak] { display: none !important; }
+    .bd-blue   { color: var(--bd-blue); }
+    .bg-bd     { background-color: var(--bd-blue); }
+    .bg-bd-light { background-color: #E8F0F8; }
+    .border-bd { border-color: var(--bd-blue); }
+    .ring-bd   { --tw-ring-color: var(--bd-blue); }
+    .kpi-card  { border-top: 3px solid var(--bd-blue); }
+    .bg-bd-orange { background-color: var(--bd-orange); }
+    .bg-bd-orange:hover { background-color: var(--bd-orange-dark); }
+    .pulse-dot::before {
+      content: '';
+      display: inline-block;
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #10B981;
+      animation: pulse 2s infinite;
+      margin-right: 6px;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.3; }
+    }
+    .progress-bar {
+      transition: width 1.5s ease-in-out;
+    }
+    .card-hover { transition: transform .15s, box-shadow .15s; }
+    .card-hover:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,88,152,.12); }
+    .upload-drop { transition: background .2s, border-color .2s; }
+    .upload-drop.dragover { background: #E8F0F8; border-color: var(--bd-blue); }
+    .step-done  { background: #10B981; }
+    .step-run   { background: #F59E0B; animation: spin 1s linear infinite; }
+    .step-wait  { background: #D1D5DB; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .severity-critica { background:#FEE2E2; color:#B91C1C; border:1px solid #FCA5A5; }
+    .severity-alta    { background:#FEF3C7; color:#92400E; border:1px solid #FCD34D; }
+    .severity-media   { background:#DBEAFE; color:#1E40AF; border:1px solid #93C5FD; }
+    .severity-baixa   { background:#F3F4F6; color:#374151; border:1px solid #D1D5DB; }
+    .status-novo             { background:#EDE9FE; color:#5B21B6; }
+    .status-planejado        { background:#DBEAFE; color:#1E40AF; }
+    .status-coletado         { background:#FEF3C7; color:#92400E; }
+    .status-em_transito      { background:#FEF9C3; color:#713F12; }
+    .status-em_rota_entrega  { background:#D1FAE5; color:#065F46; }
+    .status-entregue         { background:#A7F3D0; color:#064E3B; }
+    .status-tentativa        { background:#FFE4E6; color:#9F1239; }
+    .status-devolvido        { background:#F3F4F6; color:#374151; }
+  </style>
+</head>
+<body class="bg-gray-50 font-sans" x-data="app()" x-init="init()" x-cloak>
+
+  <!-- TELA DE LOGIN -->
+  <div x-show="!perfilSelecionado" x-cloak
+       class="fixed inset-0 z-[100] bg-gradient-to-br from-blue-950 to-blue-800 flex items-center justify-center p-6">
+    <div class="max-w-sm w-full text-center">
+      <div class="w-24 h-24 rounded-2xl bg-white flex items-center justify-center mx-auto mb-4 p-4 shadow-lg">
+        <img src="https://upload.wikimedia.org/wikipedia/commons/f/fd/BD_%28company%29_logo.svg"
+             alt="Becton Dickinson" class="w-full h-auto object-contain" />
+      </div>
+      <h1 class="text-white text-xl font-bold mb-1">PEO-BD — Planejamento de Expedição Outbound</h1>
+      <p class="text-blue-200 text-sm mb-8">Entre com seu usuário para continuar</p>
+
+      <form @submit.prevent="fazerLogin()" class="bg-white rounded-2xl p-6 text-left shadow-lg space-y-4">
+        <div>
+          <label class="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">Usuário</label>
+          <input type="text" x-model="loginForm.usuario" autocomplete="username" autofocus
+                 class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 ring-bd" />
+        </div>
+        <div>
+          <label class="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">Senha</label>
+          <input type="password" x-model="loginForm.senha" autocomplete="current-password"
+                 class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 ring-bd" />
+        </div>
+        <div x-show="loginErro" x-cloak class="text-red-600 text-xs font-medium" x-text="loginErro"></div>
+        <button type="submit" :disabled="loginCarregando"
+                class="w-full bg-bd text-white font-semibold py-2.5 rounded-lg text-sm transition-colors disabled:opacity-50">
+          <span x-show="!loginCarregando">Entrar</span>
+          <span x-show="loginCarregando">Entrando...</span>
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- BANNER DE CONTINGÊNCIA — visível enquanto modoContingencia === true -->
+  <div x-show="modoContingencia"
+       x-transition:enter="transition ease-out duration-300"
+       x-transition:enter-start="opacity-0 -translate-y-full"
+       x-transition:enter-end="opacity-100 translate-y-0"
+       x-transition:leave="transition ease-in duration-200"
+       x-transition:leave-start="opacity-100 translate-y-0"
+       x-transition:leave-end="opacity-0 -translate-y-full"
+       class="fixed top-0 left-0 right-0 z-50 flex items-center justify-between gap-4 px-5 py-2.5 bg-amber-500 text-white text-sm font-medium shadow-lg"
+       style="display:none">
+    <div class="flex items-center gap-2">
+      <span class="text-base">⚠</span>
+      <span>Modo de Contingência — Sistema operando localmente. Os dados serão sincronizados quando a conexão for restabelecida.</span>
+      <span x-show="pendentesLocais > 0"
+            class="ml-2 bg-white text-amber-700 text-xs font-bold px-2 py-0.5 rounded-full"
+            x-text="pendentesLocais + ' item(s) aguardando sync'"></span>
+    </div>
+    <div class="flex items-center gap-3 shrink-0">
+      <span class="text-xs opacity-75"
+            x-text="'Falhas: ' + falhasConsecutivas + ' · Verificando a cada 15s'"></span>
+      <span class="inline-flex items-center gap-1 text-xs">
+        <span class="w-2 h-2 rounded-full bg-red-300 animate-pulse"></span>
+        Offline
+      </span>
+    </div>
+  </div>
+
+  <!-- BANNER DE RECONEXÃO — confirmação breve após retorno -->
+  <div x-show="reconectado"
+       x-transition:enter="transition ease-out duration-300"
+       x-transition:enter-start="opacity-0 -translate-y-full"
+       x-transition:enter-end="opacity-100 translate-y-0"
+       x-transition:leave="transition ease-in duration-500"
+       x-transition:leave-start="opacity-100 translate-y-0"
+       x-transition:leave-end="opacity-0 -translate-y-full"
+       class="fixed top-0 left-0 right-0 z-50 flex items-center gap-3 px-5 py-2.5 bg-green-500 text-white text-sm font-medium shadow-lg"
+       style="display:none">
+    <span class="text-base">✓</span>
+    <span>Conexão restabelecida — sincronizando dados locais com o servidor...</span>
+  </div>
+
+  <!-- LAYOUT PRINCIPAL -->
+  <div x-show="perfilSelecionado" class="flex h-screen overflow-hidden">
+
+    <!-- SIDEBAR -->
+    <aside class="bg-bd w-64 flex-shrink-0 flex flex-col shadow-xl">
+      <!-- Logo BD -->
+      <div class="px-6 py-5 border-b border-blue-800">
+        <div class="flex items-center gap-3">
+          <div class="bg-white rounded-lg p-1.5 flex items-center justify-center shrink-0">
+            <img src="https://upload.wikimedia.org/wikipedia/commons/f/fd/BD_%28company%29_logo.svg"
+                 alt="Becton Dickinson"
+                 class="h-6 w-auto object-contain" />
+          </div>
+          <div>
+            <div class="text-white font-bold text-sm leading-tight">PEO-BD</div>
+            <div class="text-blue-300 text-xs">Expedição Outbound</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Seletor de CD -->
+      <div class="px-4 py-3 border-b border-blue-800">
+        <label class="text-blue-300 text-xs uppercase tracking-wider block mb-1">Centro de Distribuição</label>
+        <select x-model="cdFiltro" @change="loadDashboard()"
+                :disabled="perfilSelecionado && perfilSelecionado !== 'master'"
+                class="w-full bg-blue-900 text-white text-sm rounded px-3 py-1.5 border border-blue-700 focus:outline-none focus:border-blue-400 disabled:opacity-60 disabled:cursor-not-allowed">
+          <option value="">Todos os CDs</option>
+          <option value="OSA">Osasco — Timóteo</option>
+          <option value="ITJ">Itajaí — Carlos</option>
+        </select>
+        <div x-show="perfilSelecionado && perfilSelecionado !== 'master'" class="text-blue-400 text-xs mt-1">
+          Perfil restrito a este CD
+        </div>
+      </div>
+
+      <!-- Nav -->
+      <nav class="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+        <template x-for="item in navItems" :key="item.id">
+          <button @click="page = item.id"
+                  :class="page === item.id
+                    ? 'bg-white text-blue-900 font-semibold'
+                    : 'text-blue-200 hover:bg-blue-800 hover:text-white'"
+                  class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all">
+            <span x-text="item.icon" class="text-lg leading-none"></span>
+            <span x-text="item.label"></span>
+            <!-- Badge alerta crítico no dashboard -->
+            <template x-if="item.id === 'alertas' && alertasCriticos > 0">
+              <span class="ml-auto bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full"
+                    x-text="alertasCriticos"></span>
+            </template>
+          </button>
+        </template>
+      </nav>
+
+      <!-- Rodapé sidebar -->
+      <div class="px-4 py-3 border-t border-blue-800">
+        <div class="text-blue-400 text-xs">
+          <div class="pulse-dot inline">Sistema ativo</div>
+          <div class="mt-1" x-text="'Atualizado: ' + horaAtual"></div>
+        </div>
+        <button @click="logout()"
+                class="mt-2 text-xs text-blue-300 hover:text-white underline flex items-center gap-1">
+          <span>Sair</span>
+          <span class="text-blue-400" x-text="'(' + usuarioNome + ')'"></span>
+        </button>
+      </div>
+    </aside>
+
+    <!-- CONTEÚDO PRINCIPAL -->
+    <main class="flex-1 flex flex-col overflow-hidden">
+
+      <!-- Header -->
+      <header class="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between shadow-sm">
+        <div>
+          <h1 class="text-lg font-bold bd-blue" x-text="navItems.find(n=>n.id===page)?.title || ''"></h1>
+          <p class="text-xs text-gray-500" x-text="dataHoje"></p>
+        </div>
+        <div class="flex items-center gap-4">
+          <!-- OTIF badge header -->
+          <div class="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5">
+            <span class="text-xs text-gray-500">OTIF</span>
+            <span :style="otifPct >= 95 ? 'color:#00A650' : 'color:#DC2626'"
+                  class="font-bold text-sm" x-text="otifPct.toFixed(1) + '%'"></span>
+            <span class="text-xs text-gray-400">meta 95%</span>
+          </div>
+          <!-- Exportar PDF -->
+          <button @click="exportarPDF()"
+                  :disabled="exportandoPDF"
+                  class="border border-gray-300 text-gray-700 text-sm font-semibold px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2 disabled:opacity-50">
+            <span x-show="!exportandoPDF">📄 Ondas do Dia (PDF)</span>
+            <span x-show="exportandoPDF">⏳ Gerando PDF...</span>
+          </button>
+          <button @click="page='upload'"
+                  class="bg-bd-orange text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors">
+            + Novo Upload
+          </button>
+          <!-- Usuário logado -->
+          <div class="flex items-center gap-2 pl-4 border-l border-gray-200">
+            <span class="text-sm text-gray-600">Olá, <span class="font-semibold text-gray-800" x-text="usuarioNome"></span></span>
+            <button @click="logout()" class="text-xs text-gray-400 hover:text-red-600 underline">Logout</button>
+          </div>
+        </div>
+      </header>
+
+      <!-- Scroll area -->
+      <div class="flex-1 overflow-y-auto">
+
+        <!-- ═══════════════════════════════════════════════════════════════
+             PÁGINA: DASHBOARD
+        ════════════════════════════════════════════════════════════════ -->
+        <div x-show="page==='dashboard'" class="p-6 space-y-6">
+
+          <!-- KPI Cards -->
+          <div class="grid grid-cols-5 gap-4">
+            <div class="kpi-card bg-white rounded-xl p-4 shadow-sm border border-gray-100 card-hover cursor-pointer"
+                 @click="page='rastreio'; rastreioFiltro.status=''; loadRemessas()">
+              <div class="text-xs text-gray-500 uppercase tracking-wide mb-1">Total Hoje</div>
+              <div class="text-3xl font-black bd-blue" x-text="totalRemessasHoje"></div>
+              <div class="text-xs text-gray-400 mt-1">remessas ativas</div>
+            </div>
+            <div class="kpi-card bg-white rounded-xl p-4 shadow-sm border border-gray-100 card-hover cursor-pointer"
+                 @click="page='rastreio'; rastreioFiltro.status='em_rota_entrega'; loadRemessas()">
+              <div class="text-xs text-gray-500 uppercase tracking-wide mb-1">Em Rota</div>
+              <div class="text-3xl font-black text-amber-500" x-text="(dashboard.remessas?.em_rota_entrega || 0) + (dashboard.remessas?.em_transito || 0)"></div>
+              <div class="text-xs text-gray-400 mt-1">em trânsito</div>
+            </div>
+            <div class="kpi-card bg-white rounded-xl p-4 shadow-sm border border-gray-100 card-hover cursor-pointer"
+                 @click="page='rastreio'; rastreioFiltro.status='entregue'; loadRemessas()">
+              <div class="text-xs text-gray-500 uppercase tracking-wide mb-1">Entregues</div>
+              <div class="text-3xl font-black text-green-600" x-text="dashboard.remessas?.entregue || 0"></div>
+              <div class="text-xs text-gray-400 mt-1">confirmadas</div>
+            </div>
+            <div class="kpi-card bg-white rounded-xl p-4 shadow-sm border border-gray-100 card-hover cursor-pointer"
+                 @click="page='rastreio'; rastreioFiltro.status='tentativa'; loadRemessas()">
+              <div class="text-xs text-gray-500 uppercase tracking-wide mb-1">Tentativas</div>
+              <div class="text-3xl font-black text-red-500" x-text="(dashboard.remessas?.tentativa || 0) + (dashboard.remessas?.devolvido || 0)"></div>
+              <div class="text-xs text-gray-400 mt-1">falhas de entrega</div>
+            </div>
+            <div class="kpi-card bg-white rounded-xl p-4 shadow-sm border border-gray-100 card-hover cursor-pointer"
+                 @click="page='alertas'; alertaFiltro='critica'; loadAlertas()">
+              <div class="text-xs text-gray-500 uppercase tracking-wide mb-1">Alertas Críticos</div>
+              <div class="text-3xl font-black text-red-600" x-text="dashboard.alertas?.critica || 0"></div>
+              <div class="text-xs text-gray-400 mt-1">requerem atenção</div>
+            </div>
+          </div>
+
+          <!-- OTIF + Alertas -->
+          <div class="grid grid-cols-3 gap-4">
+
+            <!-- OTIF Gauge -->
+            <div class="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+              <div class="text-sm font-semibold text-gray-700 mb-4">OTIF do Período</div>
+              <div class="flex items-center justify-center">
+                <div class="relative w-36 h-36">
+                  <canvas id="otifChart"></canvas>
+                  <div class="absolute inset-0 flex flex-col items-center justify-center">
+                    <span :style="otifPct >= 95 ? 'color:#00A650' : 'color:#DC2626'"
+                          class="text-2xl font-black" x-text="otifPct.toFixed(1) + '%'"></span>
+                    <span class="text-xs text-gray-400">meta 95%</span>
+                  </div>
+                </div>
+              </div>
+              <div class="mt-3 grid grid-cols-2 gap-2 text-xs">
+                <div class="text-center">
+                  <div class="font-bold text-green-600" x-text="dashboard.remessas?.entregue || 0"></div>
+                  <div class="text-gray-400">Entregues</div>
+                </div>
+                <div class="text-center">
+                  <div class="font-bold text-red-500"
+                       x-text="(dashboard.remessas?.tentativa || 0) + (dashboard.remessas?.devolvido || 0)"></div>
+                  <div class="text-gray-400">Falhas</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Status das remessas -->
+            <div class="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+              <div class="text-sm font-semibold text-gray-700 mb-4">Status das Remessas</div>
+              <div class="space-y-2.5">
+                <template x-for="[key, label, color] in statusList" :key="key">
+                  <div>
+                    <div class="flex justify-between text-xs mb-1">
+                      <span class="text-gray-600" x-text="label"></span>
+                      <span class="font-semibold" x-text="dashboard.remessas?.[key] || 0"></span>
+                    </div>
+                    <div class="bg-gray-100 rounded-full h-1.5">
+                      <div class="h-1.5 rounded-full progress-bar"
+                           :class="color"
+                           :style="'width:' + pct(dashboard.remessas?.[key] || 0) + '%'"></div>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            <!-- Alertas resumo -->
+            <div class="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+              <div class="flex items-center justify-between mb-4">
+                <div class="text-sm font-semibold text-gray-700">Alertas Ativos</div>
+                <button @click="page='alertas'" class="text-xs bd-blue hover:underline">Ver todos</button>
+              </div>
+              <div class="space-y-2">
+                <div class="flex items-center justify-between p-2.5 rounded-lg severity-critica">
+                  <span class="text-xs font-semibold">🔴 Crítico</span>
+                  <span class="font-bold text-sm" x-text="dashboard.alertas?.critica || 0"></span>
+                </div>
+                <div class="flex items-center justify-between p-2.5 rounded-lg severity-alta">
+                  <span class="text-xs font-semibold">🟠 Alto</span>
+                  <span class="font-bold text-sm" x-text="dashboard.alertas?.alta || 0"></span>
+                </div>
+                <div class="flex items-center justify-between p-2.5 rounded-lg severity-media">
+                  <span class="text-xs font-semibold">🔵 Médio</span>
+                  <span class="font-bold text-sm" x-text="dashboard.alertas?.media || 0"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Ondas do dia -->
+          <div class="bg-white rounded-xl shadow-sm border border-gray-100">
+            <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+              <div class="text-sm font-semibold text-gray-700">Ondas do Dia</div>
+              <span class="text-xs text-gray-400" x-text="ondas.length + ' ondas planejadas'"></span>
+            </div>
+            <div x-show="ondas.length === 0" class="px-5 py-8 text-center text-gray-400 text-sm">
+              Nenhuma onda planejada ainda. Faça o upload do arquivo SAP/UPS para iniciar.
+            </div>
+            <div class="overflow-x-auto">
+              <table x-show="ondas.length > 0" class="w-full text-sm">
+                <thead class="bg-gray-50 text-xs text-gray-500 uppercase">
+                  <tr>
+                    <th class="px-4 py-3 text-left">Onda</th>
+                    <th class="px-4 py-3 text-left">Transportadora</th>
+                    <th class="px-4 py-3 text-left">Tipo</th>
+                    <th class="px-4 py-3 text-right">Remessas</th>
+                    <th class="px-4 py-3 text-right">Volume m³</th>
+                    <th class="px-4 py-3 text-right">Ocupação</th>
+                    <th class="px-4 py-3 text-right">Valor NF</th>
+                    <th class="px-4 py-3 text-center">Coleta</th>
+                    <th class="px-4 py-3 text-center">Status</th>
+                  </tr>
+                </thead>
+                <template x-for="o in ondas" :key="o.id">
+                  <tbody>
+                    <tr class="hover:bg-gray-50 transition-colors cursor-pointer border-t border-gray-50"
+                        @click="toggleOndaDashboard(o.id)">
+                      <td class="px-4 py-3 font-medium text-gray-800">
+                        <span class="text-xs text-gray-400 mr-1" x-text="ondaExpandidaDashboard===o.id ? '▲' : '▼'"></span>
+                        <span x-text="o.nome"></span>
+                      </td>
+                      <td class="px-4 py-3 text-gray-600" x-text="o.transportadora || '—'"></td>
+                      <td class="px-4 py-3">
+                        <span :class="o.tipo==='ftl' ? 'bg-indigo-100 text-indigo-700' : 'bg-blue-100 text-blue-700'"
+                              class="text-xs font-semibold px-2 py-0.5 rounded-full uppercase"
+                              x-text="o.tipo || '—'"></span>
+                      </td>
+                      <td class="px-4 py-3 text-right text-gray-600" x-text="o.total_remessas || '—'"></td>
+                      <td class="px-4 py-3 text-right text-gray-600" x-text="(o.volume_m3||0).toFixed(1)"></td>
+                      <td class="px-4 py-3 text-right">
+                        <div class="flex items-center justify-end gap-2">
+                          <div class="w-16 bg-gray-200 rounded-full h-1.5">
+                            <div class="h-1.5 rounded-full"
+                                 :class="(o.ocupacao_pct||0)>=70 ? 'bg-green-500' : 'bg-amber-400'"
+                                 :style="'width:' + Math.min(o.ocupacao_pct||0,100) + '%'"></div>
+                          </div>
+                          <span class="text-xs text-gray-500" x-text="(o.ocupacao_pct||0).toFixed(0)+'%'"></span>
+                        </div>
+                      </td>
+                      <td class="px-4 py-3 text-right text-gray-600"
+                          x-text="'R$ ' + (o.valor_nf||0).toLocaleString('pt-BR',{minimumFractionDigits:0})"></td>
+                      <td class="px-4 py-3 text-center text-gray-500 text-xs" x-text="o.horario_coleta || 'A def.'"></td>
+                      <td class="px-4 py-3 text-center">
+                        <span class="text-xs font-semibold px-2 py-0.5 rounded-full"
+                              :class="o.status==='aprovado' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'"
+                              x-text="o.status"></span>
+                      </td>
+                    </tr>
+                    <!-- painel expansível de remessas da onda -->
+                    <tr x-show="ondaExpandidaDashboard === o.id" x-transition>
+                      <td colspan="9" class="bg-slate-50 px-5 py-4 border-t border-blue-100">
+                        <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
+                          Remessas da onda — <span class="text-gray-700" x-text="o.nome"></span>
+                        </div>
+                        <div x-show="o.justificativa" class="mb-3 text-xs text-gray-600 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 whitespace-pre-line">
+                          <span class="font-semibold text-blue-800">Por que essas decisões:</span> <span x-text="o.justificativa"></span>
+                        </div>
+                        <div x-show="remessasOndaDashboardCarregando" class="text-xs text-gray-400 py-2">Carregando remessas...</div>
+                        <div x-show="!remessasOndaDashboardCarregando && remessasOndaDashboard.length === 0"
+                             class="text-xs text-gray-400 py-2">Nenhuma remessa associada a esta onda.</div>
+                        <div x-show="!remessasOndaDashboardCarregando && remessasOndaDashboard.length > 0" class="overflow-x-auto">
+                          <table class="w-full text-xs">
+                            <thead class="text-gray-400">
+                              <tr>
+                                <th class="text-left pb-1">Remessa</th>
+                                <th class="text-left pb-1">Cliente</th>
+                                <th class="text-left pb-1">Cidade/UF</th>
+                                <th class="text-right pb-1">Volume m³</th>
+                                <th class="text-right pb-1">Peso kg</th>
+                                <th class="text-center pb-1">Status</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              <template x-for="r in remessasOndaDashboard" :key="r.id">
+                                <tr class="border-t border-gray-100">
+                                  <td class="py-1.5 font-mono" x-text="r.numero_remessa"></td>
+                                  <td class="py-1.5 text-gray-600 truncate max-w-[220px]" x-text="r.cliente"></td>
+                                  <td class="py-1.5 text-gray-500" x-text="r.cidade_uf || '—'"></td>
+                                  <td class="py-1.5 text-right text-gray-500" x-text="(r.volume_m3||0).toFixed(2)"></td>
+                                  <td class="py-1.5 text-right text-gray-500" x-text="(r.peso_kg||0).toFixed(0)"></td>
+                                  <td class="py-1.5 text-center">
+                                    <span class="px-1.5 py-0.5 rounded text-xs" :class="'status-'+r.status" x-text="r.status"></span>
+                                  </td>
+                                </tr>
+                              </template>
+                            </tbody>
+                          </table>
+                        </div>
+                      </td>
+                    </tr>
+                  </tbody>
+                </template>
+              </table>
+            </div>
+          </div>
+
+          <!-- Footer do dashboard -->
+          <footer class="text-center text-xs text-gray-400 pt-2 pb-1">
+            © Becton Dickinson · Sistema desenvolvido por Emalog
+          </footer>
+
+        </div><!-- /dashboard -->
+
+
+        <!-- ═══════════════════════════════════════════════════════════════
+             PÁGINA: UPLOAD
+        ════════════════════════════════════════════════════════════════ -->
+        <div x-show="page==='upload'" class="p-6 max-w-3xl mx-auto space-y-6">
+
+          <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+            <h2 class="text-base font-semibold text-gray-800 mb-5">Upload de Arquivo de Expedição</h2>
+
+            <!-- Formulário -->
+            <div x-show="!uploadResult" class="space-y-5">
+              <div class="grid grid-cols-2 gap-4">
+                <div>
+                  <label class="block text-xs font-medium text-gray-600 mb-1">Centro de Distribuição</label>
+                  <select x-model="uploadForm.cd"
+                          class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 ring-bd">
+                    <option value="OSA">Osasco — SAP</option>
+                    <option value="ITJ">Itajaí — UPS WMS</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-gray-600 mb-1">Responsável</label>
+                  <select x-model="uploadForm.usuario"
+                          class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 ring-bd">
+                    <option value="timoteo">Timóteo (Osasco)</option>
+                    <option value="carlos">Carlos (Itajaí)</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- Drop zone (aceita múltiplos arquivos) -->
+              <div class="upload-drop border-2 border-dashed border-gray-300 rounded-xl p-8 text-center cursor-pointer"
+                   :class="uploadForm.files.length > 0 ? 'border-green-400 bg-green-50' : ''"
+                   @dragover.prevent="$el.classList.add('dragover')"
+                   @dragleave.prevent="$el.classList.remove('dragover')"
+                   @drop.prevent="handleDrop($event)"
+                   @click="$refs.fileInput.click()">
+                <input type="file" x-ref="fileInput" class="hidden"
+                       accept=".xlsx,.xls,.csv" multiple
+                       @change="uploadForm.files = Array.from($event.target.files)" />
+                <div x-show="uploadForm.files.length === 0">
+                  <div class="text-4xl mb-3">📂</div>
+                  <div class="text-sm font-medium text-gray-600">Arraste ou clique para selecionar</div>
+                  <div class="text-xs text-gray-400 mt-1">SAP Export (.xlsx) ou UPS WMS Export (.csv) — múltiplos arquivos permitidos</div>
+                </div>
+                <div x-show="uploadForm.files.length > 0" class="text-left space-y-1.5">
+                  <template x-for="(f, i) in uploadForm.files" :key="i">
+                    <div class="flex items-center gap-2 bg-white rounded-lg px-3 py-2 border border-green-200">
+                      <span class="text-green-600">✅</span>
+                      <div class="flex-1 min-w-0">
+                        <div class="text-sm font-semibold text-green-700 truncate" x-text="f.name"></div>
+                        <div class="text-xs text-green-500" x-text="(f.size/1024).toFixed(1) + ' KB'"></div>
+                      </div>
+                      <button @click.stop="uploadForm.files = uploadForm.files.filter((_,j)=>j!==i)"
+                              class="text-gray-400 hover:text-red-500 text-lg leading-none">×</button>
+                    </div>
+                  </template>
+                  <div class="text-xs text-gray-400 pt-1 text-center">Clique para adicionar mais arquivos</div>
+                </div>
+              </div>
+
+              <div class="flex items-center gap-3">
+                <input type="checkbox" x-model="uploadForm.autoEnviar" id="autoEnviar"
+                       class="w-4 h-4 rounded border-gray-300 accent-blue-700" />
+                <label for="autoEnviar" class="text-sm text-gray-600">
+                  Enviar programação por e-mail automaticamente após processar
+                </label>
+              </div>
+
+              <button @click="enviarUpload()"
+                      :disabled="uploadForm.files.length === 0 || uploading"
+                      :class="uploadForm.files.length === 0 || uploading ? 'opacity-50 cursor-not-allowed' : 'hover:bg-[#004070]'"
+                      class="w-full bg-bd text-white font-semibold py-3 rounded-lg text-sm transition-colors">
+                <span x-show="!uploading"
+                      x-text="uploadForm.files.length > 1 ? '🚀  Processar ' + uploadForm.files.length + ' Arquivos' : '🚀  Processar Arquivo'"></span>
+                <span x-show="uploading">⏳  Processando pipeline...</span>
+              </button>
+            </div>
+
+            <!-- Pipeline em andamento -->
+            <div x-show="uploading" class="mt-4 space-y-3">
+              <div class="text-sm font-medium text-gray-700 mb-3">Executando pipeline de expedição...</div>
+              <template x-for="(step, i) in pipelineSteps" :key="i">
+                <div class="flex items-center gap-3">
+                  <div class="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
+                       :class="step.done ? 'step-done' : step.running ? 'step-run' : 'step-wait'">
+                    <span x-show="step.done">✓</span>
+                    <span x-show="!step.done && !step.running" x-text="i+1"></span>
+                    <span x-show="step.running">⟳</span>
+                  </div>
+                  <div class="flex-1">
+                    <div class="text-sm font-medium text-gray-700" x-text="step.label"></div>
+                    <div class="text-xs text-gray-400" x-text="step.desc"></div>
+                  </div>
+                  <div x-show="step.done" class="text-xs text-green-600 font-semibold">Concluído</div>
+                  <div x-show="step.running" class="text-xs text-amber-600 font-semibold">Processando...</div>
+                </div>
+              </template>
+            </div>
+
+            <!-- Resultado -->
+            <div x-show="uploadResult && !uploading" class="space-y-4">
+
+              <!-- Erro de pipeline (status != 'concluido') -->
+              <div x-show="uploadResult?.status && uploadResult.status !== 'concluido' && !uploadResult?.resultados"
+                   class="p-4 bg-red-50 rounded-xl border border-red-200 space-y-2">
+                <div class="flex items-center gap-2">
+                  <span class="text-2xl">❌</span>
+                  <div class="text-sm font-bold text-red-800">Erro no processamento</div>
+                </div>
+                <div class="text-xs text-red-700 font-mono bg-red-100 rounded px-3 py-2"
+                     x-text="uploadResult?.status || 'erro desconhecido'"></div>
+                <template x-if="uploadResult?.etapas?.ingestao?.erro">
+                  <div class="text-xs text-red-600" x-text="'Ingestão: ' + uploadResult.etapas.ingestao.erro"></div>
+                </template>
+                <template x-if="uploadResult?.etapas?.montagem?.erro">
+                  <div class="text-xs text-red-600" x-text="'Montagem: ' + uploadResult.etapas.montagem.erro"></div>
+                </template>
+              </div>
+
+              <!-- Cabeçalho de sucesso -->
+              <div x-show="uploadResult?.status === 'concluido' || uploadResult?.resultados"
+                   class="flex items-center gap-3 p-4 bg-green-50 rounded-xl border border-green-200">
+                <span class="text-3xl">🎉</span>
+                <div>
+                  <div class="text-sm font-bold text-green-800"
+                       x-text="uploadResult?.total > 1
+                         ? 'Lote processado: ' + (uploadResult?.ok || 0) + '/' + uploadResult?.total + ' com sucesso'
+                         : 'Pipeline executado com sucesso!'">
+                  </div>
+                  <div class="text-xs text-green-600"
+                       x-text="uploadResult?.arquivo || (uploadResult?.total + ' arquivo(s) processados')"></div>
+                </div>
+              </div>
+
+              <!-- Resultado único (1 arquivo) — só mostra em sucesso -->
+              <div class="grid grid-cols-2 gap-3"
+                   x-show="uploadResult?.etapas?.ingestao?.validas !== undefined">
+                <div class="bg-gray-50 rounded-xl p-4 border border-gray-100" x-show="uploadResult?.etapas?.ingestao">
+                  <div class="text-xs font-semibold text-gray-500 uppercase mb-3">📥 Ingestão</div>
+                  <div class="grid grid-cols-2 gap-2 text-sm">
+                    <div>
+                      <div class="text-2xl font-black bd-blue" x-text="uploadResult?.etapas?.ingestao?.validas || 0"></div>
+                      <div class="text-xs text-gray-400">remessas válidas</div>
+                    </div>
+                    <div>
+                      <div class="text-2xl font-black text-amber-500" x-text="uploadResult?.etapas?.ingestao?.duplicatas || 0"></div>
+                      <div class="text-xs text-gray-400">duplicatas ignoradas</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="bg-gray-50 rounded-xl p-4 border border-gray-100" x-show="uploadResult?.etapas?.classificacao">
+                  <div class="text-xs font-semibold text-gray-500 uppercase mb-3">🔍 Classificação</div>
+                  <div class="grid grid-cols-2 gap-2 text-sm">
+                    <div>
+                      <div class="text-2xl font-black text-red-600" x-text="uploadResult?.etapas?.classificacao?.alertas_criados || 0"></div>
+                      <div class="text-xs text-gray-400">alertas gerados</div>
+                    </div>
+                    <div>
+                      <div class="text-2xl font-black text-amber-500" x-text="uploadResult?.etapas?.classificacao?.criticas || 0"></div>
+                      <div class="text-xs text-gray-400">críticas</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="bg-gray-50 rounded-xl p-4 border border-gray-100" x-show="uploadResult?.etapas?.montagem">
+                  <div class="text-xs font-semibold text-gray-500 uppercase mb-3">📦 Ondas</div>
+                  <div class="grid grid-cols-2 gap-2 text-sm">
+                    <div>
+                      <div class="text-2xl font-black bd-blue" x-text="uploadResult?.etapas?.montagem?.ondas || 0"></div>
+                      <div class="text-xs text-gray-400">ondas criadas</div>
+                    </div>
+                    <div>
+                      <div class="text-2xl font-black text-gray-700" x-text="uploadResult?.etapas?.montagem?.remessas || 0"></div>
+                      <div class="text-xs text-gray-400">remessas planejadas</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="bg-gray-50 rounded-xl p-4 border border-gray-100" x-show="uploadResult?.etapas?.comunicacao">
+                  <div class="text-xs font-semibold text-gray-500 uppercase mb-3">📧 E-mails</div>
+                  <div class="grid grid-cols-2 gap-2 text-sm">
+                    <div>
+                      <div class="text-2xl font-black text-green-600" x-text="uploadResult?.etapas?.comunicacao?.enviados || 0"></div>
+                      <div class="text-xs text-gray-400">enviados</div>
+                    </div>
+                    <div>
+                      <div class="text-2xl font-black text-gray-400">
+                        <span x-text="uploadResult?.etapas?.comunicacao?.dry_run ? 'sim' : 'não'"></span>
+                      </div>
+                      <div class="text-xs text-gray-400">modo demo</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Resultado lote (múltiplos arquivos) -->
+              <div x-show="uploadResult?.resultados && uploadResult.resultados.length > 0" class="space-y-2">
+                <template x-for="r in (uploadResult?.resultados || [])" :key="r.arquivo">
+                  <div class="flex items-center gap-3 p-3 rounded-lg border"
+                       :class="r.status === 'concluido' ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'">
+                    <span x-text="r.status === 'concluido' ? '✅' : '❌'"></span>
+                    <div class="flex-1 min-w-0">
+                      <div class="text-sm font-semibold truncate"
+                           :class="r.status === 'concluido' ? 'text-green-800' : 'text-red-800'"
+                           x-text="r.arquivo"></div>
+                      <div class="text-xs"
+                           :class="r.status === 'concluido' ? 'text-green-600' : 'text-red-600'"
+                           x-text="r.status === 'concluido'
+                             ? (r.etapas?.ingestao?.validas || 0) + ' remessas · ' + (r.etapas?.montagem?.ondas || 0) + ' ondas'
+                             : (r.detalhe || (r.status || 'erro').replace(/_/g,' ') || 'Erro no processamento')">
+                      </div>
+                    </div>
+                    <span class="text-xs font-bold px-2 py-0.5 rounded-full"
+                          :class="r.status === 'concluido' ? 'bg-green-200 text-green-800' : 'bg-red-200 text-red-800'"
+                          x-text="r.status === 'concluido' ? 'OK' : 'ERRO'"></span>
+                  </div>
+                </template>
+              </div>
+
+              <div class="flex gap-3">
+                <button @click="resetUpload(); page='dashboard'; loadDashboard()"
+                        class="flex-1 bg-bd text-white font-semibold py-2.5 rounded-lg text-sm hover:bg-[#004070]">
+                  Ver Dashboard
+                </button>
+                <button @click="resetUpload()"
+                        class="flex-1 border border-gray-300 text-gray-700 font-semibold py-2.5 rounded-lg text-sm hover:bg-gray-50">
+                  Novo Upload
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div><!-- /upload -->
+
+
+        <!-- ═══════════════════════════════════════════════════════════════
+             PÁGINA: RASTREIO
+        ════════════════════════════════════════════════════════════════ -->
+        <div x-show="page==='rastreio'" class="p-6 space-y-4">
+
+          <!-- Filtro por transportadora -->
+          <div class="flex flex-wrap gap-2 items-center">
+            <span class="text-xs text-gray-400 font-semibold uppercase mr-1">Transportadora:</span>
+            <button @click="rastreioFiltro.transportadoraId=''; loadRemessas()"
+                    class="text-xs font-semibold px-3 py-1.5 rounded-full transition-colors"
+                    :class="rastreioFiltro.transportadoraId==='' ? 'bg-bd text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'">
+              Todas
+            </button>
+            <template x-for="t in transportadoras" :key="t.id">
+              <button @click="rastreioFiltro.transportadoraId=t.id; loadRemessas()"
+                      class="text-xs font-semibold px-3 py-1.5 rounded-full transition-colors"
+                      :class="rastreioFiltro.transportadoraId===t.id ? 'bg-bd text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
+                      x-text="t.nome"></button>
+            </template>
+            <button @click="rastreioFiltro.transportadoraId=0; loadRemessas()"
+                    class="text-xs font-semibold px-3 py-1.5 rounded-full transition-colors"
+                    :class="rastreioFiltro.transportadoraId===0 ? 'bg-amber-500 text-white' : 'bg-amber-50 text-amber-700 hover:bg-amber-100'">
+              ⚠ Sem transportadora definida
+            </button>
+          </div>
+
+          <!-- Filtros -->
+          <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4 flex flex-wrap gap-3 items-center">
+            <input x-model="rastreioFiltro.busca"
+                   placeholder="Buscar remessa, cliente..."
+                   class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 ring-bd w-64" />
+            <select x-model="rastreioFiltro.status"
+                    class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none">
+              <option value="">Todos os status</option>
+              <option value="novo">Novo</option>
+              <option value="planejado">Planejado</option>
+              <option value="coletado">Coletado</option>
+              <option value="em_transito">Em Trânsito</option>
+              <option value="em_rota_entrega">Em Rota de Entrega</option>
+              <option value="entregue">Entregue</option>
+              <option value="tentativa">Tentativa</option>
+              <option value="devolvido">Devolvido</option>
+            </select>
+            <button @click="loadRemessas()"
+                    class="bg-bd text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-[#004070]">
+              Buscar
+            </button>
+            <span class="text-xs text-gray-400 ml-auto"
+                  x-text="remessas.length + ' remessas'"></span>
+          </div>
+
+          <!-- Tabela -->
+          <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="overflow-x-auto">
+              <table class="w-full text-sm">
+                <thead class="bg-gray-50 text-xs text-gray-500 uppercase">
+                  <tr>
+                    <th class="px-4 py-3 text-left">Remessa</th>
+                    <th class="px-4 py-3 text-left">Cliente</th>
+                    <th class="px-4 py-3 text-left">Cidade/UF</th>
+                    <th class="px-4 py-3 text-center">Status</th>
+                    <th class="px-4 py-3 text-center">NF</th>
+                    <th class="px-4 py-3 text-center">ATA</th>
+                    <th class="px-4 py-3 text-right">Vol m³</th>
+                    <th class="px-4 py-3 text-right">Valor NF</th>
+                    <th class="px-4 py-3 text-center">Janela</th>
+                    <th class="px-4 py-3 text-center">Prioridade</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-50">
+                  <template x-for="r in remessasFiltradas" :key="r.id">
+                    <tr class="hover:bg-gray-50 transition-colors cursor-pointer" @click="abrirRemessa(r)">
+                      <td class="px-4 py-3 font-mono text-gray-700 text-xs font-semibold" x-text="r.numero"></td>
+                      <td class="px-4 py-3 text-gray-700 max-w-xs truncate" x-text="r.cliente || '—'"></td>
+                      <td class="px-4 py-3 text-gray-500 text-xs" x-text="r.cidade_uf || '—'"></td>
+                      <td class="px-4 py-3 text-center">
+                        <span class="text-xs font-semibold px-2 py-0.5 rounded-full"
+                              :class="'status-' + r.status"
+                              x-text="r.status?.replace(/_/g,' ')"></span>
+                      </td>
+                      <td class="px-4 py-3 text-center">
+                        <span :class="r.nf_emitida ? 'text-green-600' : 'text-red-500'"
+                              x-text="r.nf_emitida ? '✓' : '⚠ Pendente'"></span>
+                      </td>
+                      <td class="px-4 py-3 text-center">
+                        <span x-show="r.is_ata"
+                              class="text-xs bg-purple-100 text-purple-700 font-semibold px-2 py-0.5 rounded-full">
+                          ATA <span x-text="r.dias_restantes !== null ? r.dias_restantes+'d' : ''"></span>
+                        </span>
+                        <span x-show="!r.is_ata" class="text-gray-300 text-xs">—</span>
+                      </td>
+                      <td class="px-4 py-3 text-right text-gray-600" x-text="(r.volume_m3||0).toFixed(2)"></td>
+                      <td class="px-4 py-3 text-right text-gray-600"
+                          x-text="'R$ ' + (r.valor_nf||0).toLocaleString('pt-BR',{minimumFractionDigits:0})"></td>
+                      <td class="px-4 py-3 text-center text-xs text-gray-500" x-text="r.janela || 'Flexível'"></td>
+                      <td class="px-4 py-3 text-center">
+                        <span class="text-xs font-semibold px-2 py-0.5 rounded-full"
+                              :class="r.prioridade==='critica' ? 'bg-red-100 text-red-700' :
+                                      r.prioridade==='alta'    ? 'bg-orange-100 text-orange-700' :
+                                                                  'bg-gray-100 text-gray-500'"
+                              x-text="r.prioridade"></span>
+                      </td>
+                    </tr>
+                  </template>
+                  <tr x-show="remessasFiltradas.length === 0">
+                    <td colspan="10" class="px-4 py-8 text-center text-gray-400 text-sm">
+                      Nenhuma remessa encontrada com os filtros aplicados.
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div><!-- /rastreio -->
+
+
+        <!-- ═══════════════════════════════════════════════════════════════
+             PÁGINA: ALERTAS
+        ════════════════════════════════════════════════════════════════ -->
+        <div x-show="page==='alertas'" class="p-6 space-y-4">
+
+          <div class="flex items-center gap-3">
+            <select x-model="alertaFiltro" @change="loadAlertas()"
+                    class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none">
+              <option value="">Todas severidades</option>
+              <option value="critica">🔴 Crítico</option>
+              <option value="alta">🟠 Alto</option>
+              <option value="media">🔵 Médio</option>
+            </select>
+            <span class="text-xs text-gray-400" x-text="alertas.length + ' alertas ativos'"></span>
+          </div>
+
+          <div x-show="alertas.length === 0"
+               class="bg-white rounded-xl shadow-sm border border-gray-100 p-8 text-center text-gray-400">
+            Nenhum alerta ativo. Sistema operando normalmente.
+          </div>
+
+          <div class="space-y-3">
+            <template x-for="a in alertas" :key="a.id">
+              <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4 card-hover cursor-pointer"
+                   @click="abrirAlerta(a)">
+                <div class="flex items-start justify-between gap-4">
+                  <div class="flex items-start gap-3 flex-1">
+                    <span class="text-lg flex-shrink-0">
+                      <span x-show="a.severidade==='critica'">🔴</span>
+                      <span x-show="a.severidade==='alta'">🟠</span>
+                      <span x-show="a.severidade==='media'">🔵</span>
+                      <span x-show="a.severidade==='baixa'">⚪</span>
+                    </span>
+                    <div class="flex-1">
+                      <div class="flex items-center gap-2 flex-wrap mb-1">
+                        <span class="text-sm font-semibold text-gray-800" x-text="a.titulo"></span>
+                        <span class="text-xs font-semibold px-2 py-0.5 rounded-full"
+                              :class="'severity-' + a.severidade"
+                              x-text="a.severidade?.toUpperCase()"></span>
+                        <span class="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full font-mono"
+                              x-text="a.tipo"></span>
+                      </div>
+                      <p class="text-xs text-gray-500 leading-relaxed" x-text="a.descricao"></p>
+                      <div class="text-xs text-gray-400 mt-2"
+                           x-text="'Gerado em: ' + new Date(a.criado_em).toLocaleString('pt-BR')"></div>
+                    </div>
+                  </div>
+                  <button @click.stop="resolverAlerta(a.id)"
+                          class="flex-shrink-0 text-xs border border-gray-300 text-gray-600 hover:bg-gray-50 px-3 py-1.5 rounded-lg transition-colors">
+                    Resolver
+                  </button>
+                </div>
+              </div>
+            </template>
+          </div>
+
+        </div><!-- /alertas -->
+
+
+        <!-- ═══════════════════════════════════════════════════════════════
+             PÁGINA: OPORTUNIDADES FTL
+        ════════════════════════════════════════════════════════════════ -->
+        <div x-show="page==='oportunidades'" class="p-6 space-y-6">
+
+          <!-- Destaque de economia -->
+          <div class="bg-gradient-to-r from-blue-900 to-blue-700 rounded-xl p-5 text-white">
+            <div class="text-sm font-semibold text-blue-200 mb-1">Economia Potencial Identificada</div>
+            <div class="text-4xl font-black mb-1"
+                 x-text="'R$ ' + totalEconomia.toLocaleString('pt-BR', {minimumFractionDigits:2})"></div>
+            <div class="text-sm text-blue-200"
+                 x-text="oportunidades.length + ' oportunidades de consolidação FTL detectadas'"></div>
+          </div>
+
+          <!-- O problema atual -->
+          <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+            <div class="text-sm font-semibold text-gray-700 mb-3">Por que isso acontece hoje?</div>
+            <div class="grid grid-cols-3 gap-4 text-center">
+              <div class="p-4 bg-red-50 rounded-xl border border-red-100">
+                <div class="text-3xl font-black text-red-600">≈ 15%</div>
+                <div class="text-xs text-red-500 font-medium mt-1">Sobrecusto médio de frete</div>
+                <div class="text-xs text-gray-400 mt-1">fracionado vs FTL consolidado</div>
+              </div>
+              <div class="p-4 bg-amber-50 rounded-xl border border-amber-100">
+                <div class="text-3xl font-black text-amber-600">4–5</div>
+                <div class="text-xs text-amber-600 font-medium mt-1">Dias para viabilizar FTL</div>
+                <div class="text-xs text-gray-400 mt-1">acumulando volume por região</div>
+              </div>
+              <div class="p-4 bg-green-50 rounded-xl border border-green-100">
+                <div class="text-3xl font-black text-green-600">15 m³</div>
+                <div class="text-xs text-green-600 font-medium mt-1">Limiar para FTL viável</div>
+                <div class="text-xs text-gray-400 mt-1">volume mínimo por carga</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Oportunidades -->
+          <div x-show="oportunidades.length === 0"
+               class="bg-white rounded-xl shadow-sm border border-gray-100 p-8 text-center text-gray-400">
+            Nenhuma oportunidade detectada. Faça o upload para analisar as remessas.
+          </div>
+
+          <div class="space-y-4">
+            <template x-for="op in oportunidades" :key="op.id">
+              <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5 card-hover cursor-pointer"
+                   @click="oportunidadeExpandida = oportunidadeExpandida===op.id ? null : op.id">
+                <div class="flex items-start justify-between mb-4">
+                  <div>
+                    <div class="flex items-center gap-2 mb-1">
+                      <span class="text-base font-bold text-gray-800"
+                            x-text="'Região: ' + (op.regiao?.replace(/_/g,' ')?.replace(/\b\w/g,c=>c.toUpperCase()) || '—')"></span>
+                      <span class="text-xs bg-indigo-100 text-indigo-700 font-semibold px-2 py-0.5 rounded-full uppercase"
+                            x-text="op.tipo_atual + ' → ' + op.tipo_possivel"></span>
+                      <span :class="op.status==='aberta' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'"
+                            class="text-xs font-semibold px-2 py-0.5 rounded-full"
+                            x-text="op.status"></span>
+                    </div>
+                    <div class="text-xs text-gray-400" x-text="'Analisado em ' + new Date(op.criado_em).toLocaleDateString('pt-BR')"></div>
+                  </div>
+                  <div class="text-right">
+                    <div class="text-xs text-gray-400">Economia Estimada</div>
+                    <div class="text-2xl font-black text-green-600"
+                         x-text="'R$ ' + (op.economia_estimada||0).toLocaleString('pt-BR',{minimumFractionDigits:2})"></div>
+                  </div>
+                </div>
+
+                <div class="grid grid-cols-3 gap-3 mb-4">
+                  <div class="bg-gray-50 rounded-lg p-3 text-center">
+                    <div class="text-xl font-black bd-blue" x-text="op.qtd_clientes || 0"></div>
+                    <div class="text-xs text-gray-400">clientes na região</div>
+                  </div>
+                  <div class="bg-gray-50 rounded-lg p-3 text-center">
+                    <div class="text-xl font-black bd-blue" x-text="(op.volume_atual_m3||0).toFixed(1) + ' m³'"></div>
+                    <div class="text-xs text-gray-400">volume agregado</div>
+                  </div>
+                  <div class="bg-gray-50 rounded-lg p-3 text-center">
+                    <div class="text-xl font-black text-green-600">✓ FTL</div>
+                    <div class="text-xs text-gray-400">viável (≥ 15 m³)</div>
+                  </div>
+                </div>
+
+                <div class="bg-blue-50 border border-blue-100 rounded-lg p-3">
+                  <div class="text-xs font-semibold text-blue-800 mb-1">💡 Ação Sugerida</div>
+                  <p class="text-xs text-blue-700 leading-relaxed" x-text="op.acao_sugerida"></p>
+                </div>
+
+                <div class="text-center text-xs text-gray-400 mt-3" x-show="oportunidadeExpandida !== op.id">
+                  ▼ clique para ver as remessas desta oportunidade
+                </div>
+
+                <!-- Painel expandido -->
+                <div x-show="oportunidadeExpandida === op.id" x-transition @click.stop
+                     class="mt-4 pt-4 border-t border-gray-100 cursor-default">
+                  <div class="grid grid-cols-3 gap-3 mb-4">
+                    <div class="bg-gray-50 rounded-lg p-3 text-center">
+                      <div class="text-lg font-black bd-blue" x-text="(op.clientes||[]).length"></div>
+                      <div class="text-xs text-gray-400">cliente(s) envolvido(s)</div>
+                    </div>
+                    <div class="bg-gray-50 rounded-lg p-3 text-center">
+                      <div class="text-lg font-black bd-blue"
+                           x-text="'R$ ' + (op.valor_nf_total||0).toLocaleString('pt-BR',{minimumFractionDigits:0})"></div>
+                      <div class="text-xs text-gray-400">valor NF total</div>
+                    </div>
+                    <div class="bg-gray-50 rounded-lg p-3 text-center">
+                      <div class="text-lg font-black text-green-600"
+                           x-text="'R$ ' + (op.economia_estimada||0).toLocaleString('pt-BR',{minimumFractionDigits:0})"></div>
+                      <div class="text-xs text-gray-400">economia FTL vs fracionado</div>
+                    </div>
+                  </div>
+
+                  <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                    Clientes: <span class="font-normal normal-case text-gray-600" x-text="(op.clientes||[]).join(', ') || '—'"></span>
+                  </div>
+
+                  <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Remessas</div>
+                  <div class="overflow-x-auto">
+                    <table class="w-full text-xs">
+                      <thead class="text-gray-400">
+                        <tr>
+                          <th class="text-left pb-1">Remessa</th>
+                          <th class="text-left pb-1">Cliente</th>
+                          <th class="text-right pb-1">Vol m³</th>
+                          <th class="text-right pb-1">Peso kg</th>
+                          <th class="text-right pb-1">Valor NF</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <template x-for="r in op.remessas" :key="r.id">
+                          <tr class="border-t border-gray-100">
+                            <td class="py-1.5 font-mono font-semibold text-gray-700" x-text="r.numero"></td>
+                            <td class="py-1.5 text-gray-600 truncate max-w-[220px]" x-text="r.cliente"></td>
+                            <td class="py-1.5 text-right text-gray-500" x-text="r.volume_m3.toFixed(2)"></td>
+                            <td class="py-1.5 text-right text-gray-500" x-text="r.peso_kg.toFixed(0)"></td>
+                            <td class="py-1.5 text-right text-gray-500"
+                                x-text="'R$ ' + r.valor_nf.toLocaleString('pt-BR',{minimumFractionDigits:0})"></td>
+                          </tr>
+                        </template>
+                        <tr x-show="!op.remessas || op.remessas.length === 0">
+                          <td colspan="5" class="py-3 text-center text-gray-400">Nenhuma remessa em aberto encontrada para esta oportunidade.</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </template>
+          </div>
+
+        </div><!-- /oportunidades -->
+
+
+        <!-- ═══════════════════════════════════════════════════════════════
+             PÁGINA: CLIENTES
+        ════════════════════════════════════════════════════════════════ -->
+        <div x-show="page==='clientes'" class="p-6 space-y-4">
+
+          <!-- Busca -->
+          <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4 flex gap-3 items-center">
+            <input x-model="clientesBusca" @input.debounce.400ms="loadClientes()"
+                   placeholder="Buscar cliente, cidade, tipo..."
+                   class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 ring-bd w-72" />
+            <span class="text-xs text-gray-400 ml-auto" x-text="clientesFiltrados.length + ' clientes'"></span>
+          </div>
+
+          <!-- Tabela -->
+          <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="overflow-x-auto">
+              <table class="w-full text-sm">
+                <thead class="bg-gray-50 text-xs text-gray-500 uppercase">
+                  <tr>
+                    <th class="px-4 py-3 text-left">Razão Social</th>
+                    <th class="px-4 py-3 text-left">Tipo</th>
+                    <th class="px-4 py-3 text-left">Cidade/UF</th>
+                    <th class="px-4 py-3 text-right">Pedidos</th>
+                    <th class="px-4 py-3 text-right">Valor Total</th>
+                    <th class="px-4 py-3 text-center">Entregues</th>
+                    <th class="px-4 py-3 text-center">Pendentes</th>
+                    <th class="px-4 py-3 text-center">Alertas</th>
+                    <th class="px-4 py-3 text-center">FTL</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-50">
+                  <template x-for="c in clientesFiltrados" :key="c.id">
+                    <tr class="hover:bg-blue-50 cursor-pointer transition-colors" @click="abrirCliente(c.id)">
+                      <td class="px-4 py-3 font-medium text-gray-800 max-w-xs truncate" x-text="c.razao_social"></td>
+                      <td class="px-4 py-3">
+                        <span class="text-xs px-2 py-0.5 rounded-full font-semibold"
+                              :class="c.tipo==='hospital' ? 'bg-red-100 text-red-700' : c.tipo==='laboratorio' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'"
+                              x-text="c.tipo"></span>
+                      </td>
+                      <td class="px-4 py-3 text-gray-500 text-xs" x-text="(c.cidade||'') + '/' + (c.uf||'')"></td>
+                      <td class="px-4 py-3 text-right font-semibold bd-blue" x-text="c.total_remessas"></td>
+                      <td class="px-4 py-3 text-right text-gray-600"
+                          x-text="'R$ ' + (c.valor_total||0).toLocaleString('pt-BR',{minimumFractionDigits:0})"></td>
+                      <td class="px-4 py-3 text-center">
+                        <span class="text-xs font-bold text-green-600" x-text="c.qtd_entregues"></span>
+                      </td>
+                      <td class="px-4 py-3 text-center">
+                        <span class="text-xs font-bold" :class="c.qtd_pendentes > 0 ? 'text-amber-600' : 'text-gray-400'" x-text="c.qtd_pendentes"></span>
+                      </td>
+                      <td class="px-4 py-3 text-center">
+                        <span x-show="c.qtd_alertas > 0"
+                              class="bg-red-100 text-red-700 text-xs font-bold px-2 py-0.5 rounded-full"
+                              x-text="c.qtd_alertas"></span>
+                        <span x-show="c.qtd_alertas === 0" class="text-gray-300 text-xs">—</span>
+                      </td>
+                      <td class="px-4 py-3 text-center">
+                        <span x-show="c.ftl_possivel" class="bg-indigo-100 text-indigo-700 text-xs font-bold px-2 py-0.5 rounded-full">FTL</span>
+                        <span x-show="!c.ftl_possivel" class="text-gray-300 text-xs">—</span>
+                      </td>
+                    </tr>
+                  </template>
+                  <tr x-show="clientesFiltrados.length === 0">
+                    <td colspan="9" class="px-4 py-8 text-center text-gray-400 text-sm">Nenhum cliente encontrado.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div><!-- /clientes -->
+
+
+        <!-- ═══════════════════════════════════════════════════════════════
+             PÁGINA: ERROS DE UPLOAD
+        ════════════════════════════════════════════════════════════════ -->
+        <div x-show="page==='painel_diagnostico'" class="p-6 space-y-5">
+
+          <!-- Cabeçalho upload -->
+          <div x-show="erros.ultimo_upload?.arquivo"
+               @click="abrirUploadDetalhe()"
+               class="bg-white rounded-xl shadow-sm border border-gray-100 px-5 py-3 flex items-center gap-3 cursor-pointer hover:bg-gray-50 transition-colors">
+            <span class="text-xl">📋</span>
+            <div>
+              <span class="text-sm font-semibold text-gray-700">Último upload analisado: </span>
+              <span class="text-sm text-gray-500" x-text="erros.ultimo_upload?.arquivo"></span>
+            </div>
+            <div class="ml-auto flex items-center gap-2 text-xs text-gray-400">
+              <span x-text="erros.ultimo_upload?.criado_em ? new Date(erros.ultimo_upload.criado_em).toLocaleString('pt-BR') : ''"></span>
+              <span class="bd-blue">Ver detalhes →</span>
+            </div>
+          </div>
+
+          <!-- KPI Cards -->
+          <div class="grid grid-cols-3 gap-4">
+            <div @click="painelDiagnosticoAba='duplicatas'"
+                 :class="painelDiagnosticoAba==='duplicatas' ? 'ring-2 ring-amber-400' : ''"
+                 class="kpi-card bg-white rounded-xl p-5 shadow-sm border border-gray-100 card-hover cursor-pointer">
+              <div class="flex items-center gap-3 mb-2">
+                <span class="text-2xl">🔁</span>
+                <div class="text-xs text-gray-500 uppercase font-semibold">Remessas Duplicadas</div>
+              </div>
+              <div class="text-4xl font-black text-amber-500" x-text="erros.totais?.duplicatas || 0"></div>
+              <div class="text-xs text-gray-400 mt-1">do último upload</div>
+            </div>
+            <div @click="painelDiagnosticoAba='em_aberto'"
+                 :class="painelDiagnosticoAba==='em_aberto' ? 'ring-2 ring-red-400' : ''"
+                 class="kpi-card bg-white rounded-xl p-5 shadow-sm border border-gray-100 card-hover cursor-pointer">
+              <div class="flex items-center gap-3 mb-2">
+                <span class="text-2xl">📂</span>
+                <div class="text-xs text-gray-500 uppercase font-semibold">Remessas em Aberto</div>
+              </div>
+              <div class="text-4xl font-black text-red-500" x-text="erros.totais?.em_aberto || 0"></div>
+              <div class="text-xs text-gray-400 mt-1">backlog acumulado</div>
+            </div>
+            <div @click="painelDiagnosticoAba='sem_nf'"
+                 :class="painelDiagnosticoAba==='sem_nf' ? 'ring-2 ring-purple-400' : ''"
+                 class="kpi-card bg-white rounded-xl p-5 shadow-sm border border-gray-100 card-hover cursor-pointer">
+              <div class="flex items-center gap-3 mb-2">
+                <span class="text-2xl">📄</span>
+                <div class="text-xs text-gray-500 uppercase font-semibold">Sem Nota Fiscal</div>
+              </div>
+              <div class="text-4xl font-black text-purple-600" x-text="erros.totais?.sem_nf || 0"></div>
+              <div class="text-xs text-gray-400 mt-1">despacho bloqueado</div>
+            </div>
+          </div>
+
+          <!-- Tabela Duplicatas -->
+          <div x-show="painelDiagnosticoAba==='duplicatas'" class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="px-5 py-3 border-b border-gray-100 text-sm font-semibold text-gray-700">🔁 Remessas Duplicadas</div>
+            <div x-show="erros.duplicatas?.length === 0" class="px-5 py-8 text-center text-gray-400 text-sm">Nenhuma duplicata detectada no último upload.</div>
+            <table x-show="erros.duplicatas?.length > 0" class="w-full text-sm">
+              <thead class="bg-gray-50 text-xs text-gray-500 uppercase">
+                <tr>
+                  <th class="px-4 py-3 text-left">Remessa</th>
+                  <th class="px-4 py-3 text-left">Cliente</th>
+                  <th class="px-4 py-3 text-right">Valor NF</th>
+                  <th class="px-4 py-3 text-left">Motivo</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-gray-50">
+                <template x-for="d in erros.duplicatas" :key="d.numero">
+                  <tr class="hover:bg-gray-50">
+                    <td class="px-4 py-3 font-mono text-xs font-semibold text-amber-700" x-text="d.numero"></td>
+                    <td class="px-4 py-3 text-gray-700 max-w-xs truncate" x-text="d.cliente"></td>
+                    <td class="px-4 py-3 text-right text-gray-600" x-text="'R$ ' + (d.valor_nf||0).toLocaleString('pt-BR',{minimumFractionDigits:0})"></td>
+                    <td class="px-4 py-3 text-xs text-gray-500" x-text="d.motivo"></td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Tabela Em Aberto -->
+          <div x-show="painelDiagnosticoAba==='em_aberto'" class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="px-5 py-3 border-b border-gray-100 text-sm font-semibold text-gray-700">📂 Remessas em Aberto (Backlog)</div>
+            <div x-show="erros.em_aberto?.length === 0" class="px-5 py-8 text-center text-gray-400 text-sm">Nenhuma remessa em aberto. Sistema em dia!</div>
+            <table x-show="erros.em_aberto?.length > 0" class="w-full text-sm">
+              <thead class="bg-gray-50 text-xs text-gray-500 uppercase">
+                <tr>
+                  <th class="px-4 py-3 text-left">Remessa</th>
+                  <th class="px-4 py-3 text-left">Cliente</th>
+                  <th class="px-4 py-3 text-center">Data Extração</th>
+                  <th class="px-4 py-3 text-center">Dias em Aberto</th>
+                  <th class="px-4 py-3 text-center">ATA</th>
+                  <th class="px-4 py-3 text-right">Valor NF</th>
+                  <th class="px-4 py-3 text-center">Prioridade</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-gray-50">
+                <template x-for="r in erros.em_aberto" :key="r.numero">
+                  <tr class="hover:bg-gray-50">
+                    <td class="px-4 py-3 font-mono text-xs font-semibold text-gray-700" x-text="r.numero"></td>
+                    <td class="px-4 py-3 text-gray-700 max-w-xs truncate" x-text="r.cliente"></td>
+                    <td class="px-4 py-3 text-center text-xs text-gray-500" x-text="new Date(r.data_extracao).toLocaleDateString('pt-BR')"></td>
+                    <td class="px-4 py-3 text-center">
+                      <span class="text-xs font-bold px-2 py-0.5 rounded-full"
+                            :class="r.dias_em_aberto > 7 ? 'bg-red-100 text-red-700' : r.dias_em_aberto > 3 ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600'"
+                            x-text="r.dias_em_aberto + 'd'"></span>
+                    </td>
+                    <td class="px-4 py-3 text-center">
+                      <span x-show="r.is_ata" class="text-xs bg-purple-100 text-purple-700 font-semibold px-2 py-0.5 rounded-full">ATA</span>
+                      <span x-show="!r.is_ata" class="text-gray-300 text-xs">—</span>
+                    </td>
+                    <td class="px-4 py-3 text-right text-gray-600" x-text="'R$ ' + (r.valor_nf||0).toLocaleString('pt-BR',{minimumFractionDigits:0})"></td>
+                    <td class="px-4 py-3 text-center">
+                      <span class="text-xs font-semibold px-2 py-0.5 rounded-full"
+                            :class="r.prioridade==='critica' ? 'bg-red-100 text-red-700' : r.prioridade==='alta' ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-500'"
+                            x-text="r.prioridade"></span>
+                    </td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Tabela Sem NF -->
+          <div x-show="painelDiagnosticoAba==='sem_nf'" class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="px-5 py-3 border-b border-gray-100 text-sm font-semibold text-gray-700">📄 Remessas sem Nota Fiscal</div>
+            <div x-show="erros.sem_nf?.length === 0" class="px-5 py-8 text-center text-gray-400 text-sm">Todas as remessas têm NF emitida.</div>
+            <table x-show="erros.sem_nf?.length > 0" class="w-full text-sm">
+              <thead class="bg-gray-50 text-xs text-gray-500 uppercase">
+                <tr>
+                  <th class="px-4 py-3 text-left">Remessa</th>
+                  <th class="px-4 py-3 text-left">Cliente</th>
+                  <th class="px-4 py-3 text-center">Status</th>
+                  <th class="px-4 py-3 text-center">ATA</th>
+                  <th class="px-4 py-3 text-right">Valor NF</th>
+                  <th class="px-4 py-3 text-center">Prioridade</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-gray-50">
+                <template x-for="r in erros.sem_nf" :key="r.numero">
+                  <tr class="hover:bg-gray-50">
+                    <td class="px-4 py-3 font-mono text-xs font-semibold text-purple-700" x-text="r.numero"></td>
+                    <td class="px-4 py-3 text-gray-700 max-w-xs truncate" x-text="r.cliente"></td>
+                    <td class="px-4 py-3 text-center">
+                      <span class="text-xs font-semibold px-2 py-0.5 rounded-full status-novo" x-text="r.status"></span>
+                    </td>
+                    <td class="px-4 py-3 text-center">
+                      <span x-show="r.is_ata" class="text-xs bg-purple-100 text-purple-700 font-semibold px-2 py-0.5 rounded-full">ATA</span>
+                      <span x-show="!r.is_ata" class="text-gray-300 text-xs">—</span>
+                    </td>
+                    <td class="px-4 py-3 text-right text-gray-600" x-text="'R$ ' + (r.valor_nf||0).toLocaleString('pt-BR',{minimumFractionDigits:0})"></td>
+                    <td class="px-4 py-3 text-center">
+                      <span class="text-xs font-semibold px-2 py-0.5 rounded-full"
+                            :class="r.prioridade==='critica' ? 'bg-red-100 text-red-700' : r.prioridade==='alta' ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-500'"
+                            x-text="r.prioridade"></span>
+                    </td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+          <!-- Último Erro Identificado -->
+          <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+              <div>
+                <div class="text-sm font-semibold text-gray-700">Último Erro Identificado</div>
+                <div class="text-xs text-gray-400 mt-0.5">5 erros de sistema mais recentes — atualiza com o dashboard</div>
+              </div>
+              <button @click="loadUltimosErros()" class="text-xs bd-blue hover:underline">Atualizar</button>
+            </div>
+
+            <div x-show="ultimosErros.length === 0" class="px-5 py-8 text-center text-gray-400 text-sm">
+              Nenhum erro de sistema registrado.
+            </div>
+
+            <div x-show="ultimosErros.length > 0" class="divide-y divide-gray-50">
+              <template x-for="ev in ultimosErros" :key="ev.id">
+                <div class="px-5 py-3 flex items-start gap-3 hover:bg-gray-50">
+                  <span class="mt-0.5 text-xs font-bold px-2 py-0.5 rounded-full shrink-0"
+                        :class="badgeGravidade(ev.gravidade).bg + ' ' + badgeGravidade(ev.gravidade).text"
+                        x-text="(ev.gravidade || '—').toUpperCase()"></span>
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2 flex-wrap">
+                      <span class="text-xs font-bold text-gray-700 font-mono" x-text="ev.tipo_evento"></span>
+                      <span class="text-xs text-gray-400" x-text="new Date(ev.timestamp).toLocaleString('pt-BR')"></span>
+                    </div>
+                    <div class="text-xs text-gray-500 truncate mt-0.5" x-text="ev.descricao"></div>
+                  </div>
+                  <span class="shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full"
+                        :class="['sucesso','acao_automatica'].includes(ev.resultado) ? 'bg-green-100 text-green-700' : ev.resultado === 'falha' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'"
+                        x-text="ev.resultado === 'acao_automatica' ? 'Resolvido automaticamente' : (ev.resultado === 'alerta_gerado' ? 'Escalado' : ev.resultado)"></span>
+                </div>
+              </template>
+            </div>
+          </div>
+
+        </div><!-- /erros -->
+
+
+        <!-- ═══════════════════════════════════════════════════════════════
+             PÁGINA: TRANSPORTADORAS
+        ════════════════════════════════════════════════════════════════ -->
+        <div x-show="page==='transportadoras'" class="p-6 space-y-6">
+
+          <!-- Tabela de Performance das Transportadoras -->
+          <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+              <div>
+                <div class="text-sm font-semibold text-gray-700">Performance das Transportadoras</div>
+                <div class="text-xs text-gray-400 mt-0.5">Baseado no histórico de eventos — clique para ver os últimos eventos</div>
+              </div>
+              <button @click="loadEstatisticasTransp()" class="text-xs bd-blue hover:underline">Atualizar</button>
+            </div>
+
+            <div x-show="estatisticasTransp.length === 0" class="px-5 py-8 text-center text-gray-400 text-sm">
+              Nenhum dado de histórico. Execute <code class="bg-gray-100 px-1 rounded">seed_historico_demo.py</code> ou aguarde eventos do pipeline.
+            </div>
+
+            <div x-show="estatisticasTransp.length > 0">
+              <table class="w-full text-sm">
+                <thead class="bg-gray-50 text-xs text-gray-500 uppercase">
+                  <tr>
+                    <th class="px-5 py-3 text-left">Transportadora</th>
+                    <th class="px-5 py-3 text-right">Programações</th>
+                    <th class="px-5 py-3 text-right">Erros</th>
+                    <th class="px-5 py-3 text-right">Taxa de Falha</th>
+                    <th class="px-5 py-3 text-right">Resp. Médio</th>
+                    <th class="px-5 py-3 text-center">Status</th>
+                    <th class="px-5 py-3 text-left">OTIF vs. Meta</th>
+                    <th class="px-5 py-3 text-center">Histórico</th>
+                  </tr>
+                </thead>
+                <!-- múltiplos <tbody> por linha são HTML5 válido; é o padrão para template x-for em tabelas -->
+                <template x-for="t in estatisticasTransp" :key="t.id">
+                  <tbody>
+                    <!-- linha principal clicável -->
+                    <tr class="border-t border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors"
+                        @click="loadHistoricoTransp(t.id)">
+                      <td class="px-5 py-3">
+                        <div class="font-medium text-gray-800" x-text="t.nome"></div>
+                        <div class="text-xs text-gray-400 mt-0.5" x-text="t.codigo + ' · SLA ' + t.sla_resposta_h + 'h'"></div>
+                      </td>
+                      <td class="px-5 py-3 text-right font-semibold text-gray-700" x-text="t.total_programacoes"></td>
+                      <td class="px-5 py-3 text-right">
+                        <span :class="t.total_erros > 0 ? 'text-red-600 font-semibold' : 'text-gray-300'"
+                              x-text="t.total_erros"></span>
+                      </td>
+                      <td class="px-5 py-3 text-right">
+                        <span :class="indicadorTransp(t.taxa_falha_pct).text + ' font-bold'"
+                              x-text="t.taxa_falha_pct.toFixed(1) + '%'"></span>
+                      </td>
+                      <td class="px-5 py-3 text-right text-gray-500">
+                        <span x-show="t.tempo_medio_resposta_h !== null" x-text="t.tempo_medio_resposta_h + 'h'"></span>
+                        <span x-show="t.tempo_medio_resposta_h === null" class="text-gray-300">—</span>
+                      </td>
+                      <td class="px-5 py-3 text-center">
+                        <span :class="indicadorTransp(t.taxa_falha_pct).bg + ' ' + indicadorTransp(t.taxa_falha_pct).text + ' text-xs font-bold px-2.5 py-1 rounded-full'"
+                              x-text="indicadorTransp(t.taxa_falha_pct).label"></span>
+                      </td>
+                      <td class="px-5 py-3" @click.stop>
+                        <div class="relative w-36 h-2 bg-gray-100 rounded-full overflow-hidden">
+                          <div class="absolute inset-y-0 left-0 rounded-full"
+                               :style="'width:' + Math.min(t.otif_atual||0, 100) + '%; background-color:' + (t.abaixo_meta ? '#DC2626' : '#00A650')"></div>
+                          <div class="absolute inset-y-0 border-l-2 border-dashed border-gray-500"
+                               :style="'left:' + Math.min(t.meta_otif, 100) + '%'"
+                               :title="'Meta: ' + t.meta_otif.toFixed(1) + '%'"></div>
+                        </div>
+                        <div class="flex items-center gap-2 mt-1.5">
+                          <span x-show="t.otif_atual !== null"
+                                :style="t.abaixo_meta ? 'background-color:#FEE2E2;color:#DC2626' : 'background-color:#E6F6EC;color:#00A650'"
+                                class="text-xs font-bold px-2 py-0.5 rounded-full whitespace-nowrap"
+                                x-text="t.otif_atual === null ? '' : (t.abaixo_meta ? 'ABAIXO DA META' : 'DENTRO DA META') + ' · ' + t.otif_atual.toFixed(1) + '%'"></span>
+                          <span x-show="t.otif_atual === null" class="text-xs text-gray-300">sem dados</span>
+                        </div>
+                        <div class="mt-1">
+                          <span x-show="perfilSelecionado !== 'master'" class="text-xs text-gray-400">
+                            meta: <span x-text="t.meta_otif.toFixed(1) + '%'"></span>
+                          </span>
+                          <button x-show="perfilSelecionado === 'master' && metaEditando !== t.id"
+                                  @click="editarMetaOtif(t)"
+                                  class="text-xs text-gray-400 hover:text-blue-600 underline">
+                            meta: <span x-text="t.meta_otif.toFixed(1) + '%'"></span> ✎
+                          </button>
+                          <span x-show="perfilSelecionado === 'master' && metaEditando === t.id" class="inline-flex items-center gap-1">
+                            <input type="number" step="0.1" min="0" max="100" x-model.number="metaEditValor"
+                                   class="w-16 border border-gray-300 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-2 ring-bd" />
+                            <button @click="salvarMetaOtif(t)" class="text-xs font-bold text-green-600 hover:text-green-700">✓</button>
+                            <button @click="metaEditando = null" class="text-xs font-bold text-gray-400 hover:text-gray-600">✕</button>
+                          </span>
+                        </div>
+                      </td>
+                      <td class="px-5 py-3 text-center text-xs"
+                          :class="transpExpandida === t.id ? 'text-blue-600' : 'text-gray-400'">
+                        <span x-show="transpExpandida !== t.id">▼ ver</span>
+                        <span x-show="transpExpandida === t.id">▲ fechar</span>
+                      </td>
+                    </tr>
+                    <!-- painel expansível de histórico -->
+                    <tr x-show="transpExpandida === t.id" x-transition>
+                      <td colspan="8" class="bg-slate-50 px-5 py-4 border-t border-blue-100">
+                        <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
+                          Últimos eventos — <span class="text-gray-700" x-text="t.nome"></span>
+                        </div>
+                        <div x-show="historicoCarregando" class="text-xs text-gray-400 py-2">Carregando...</div>
+                        <div x-show="!historicoCarregando && historicoTransp.length === 0"
+                             class="text-xs text-gray-400 py-2">Nenhum evento registrado para esta transportadora.</div>
+                        <div x-show="!historicoCarregando && historicoTransp.length > 0" class="space-y-1.5">
+                          <template x-for="ev in historicoTransp" :key="ev.id">
+                            <div class="flex items-start gap-3 bg-white rounded-lg px-3 py-2 border border-gray-100 text-xs cursor-pointer hover:bg-gray-50"
+                                 @click="abrirEvento(ev)">
+                              <span class="flex-shrink-0 mt-0.5 font-bold px-2 py-0.5 rounded"
+                                    :class="{
+                                      'bg-red-100 text-red-700':     ev.resultado === 'falha',
+                                      'bg-green-100 text-green-700': ev.resultado === 'sucesso',
+                                      'bg-yellow-100 text-yellow-700': ev.resultado === 'alerta_gerado',
+                                      'bg-blue-100 text-blue-700':   ev.resultado === 'acao_automatica',
+                                      'bg-gray-100 text-gray-600':   !['falha','sucesso','alerta_gerado','acao_automatica'].includes(ev.resultado),
+                                    }"
+                                    x-text="ev.resultado"></span>
+                              <div class="flex-1 min-w-0">
+                                <div class="text-gray-700 leading-snug" x-text="ev.descricao"></div>
+                                <div class="text-gray-400 mt-1 space-x-2">
+                                  <span class="bg-gray-100 px-1 rounded" x-text="ev.tipo_evento"></span>
+                                  <span x-text="ev.origem"></span>
+                                  <span x-text="new Date(ev.timestamp).toLocaleString('pt-BR')"></span>
+                                </div>
+                              </div>
+                            </div>
+                          </template>
+                        </div>
+                      </td>
+                    </tr>
+                  </tbody>
+                </template>
+              </table>
+            </div>
+          </div>
+
+          <!-- Cotação por Rota -->
+          <div class="bg-white rounded-xl shadow-sm border border-gray-100">
+            <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+              <div>
+                <div class="text-sm font-semibold text-gray-700">Cotação Consolidada por Rota</div>
+                <div class="text-xs text-gray-400 mt-0.5">Baseada nas remessas em aberto (status: novo)</div>
+              </div>
+              <button @click="loadCotacao()" class="text-xs bd-blue hover:underline">Recalcular</button>
+            </div>
+
+            <div x-show="cotacao.length === 0" class="px-5 py-8 text-center text-gray-400 text-sm">
+              Nenhuma remessa em aberto para cotar. Faça o upload de um arquivo SAP.
+            </div>
+
+            <div x-show="cotacao.length > 0" class="overflow-x-auto">
+              <table class="w-full text-sm">
+                <thead class="bg-gray-50 text-xs text-gray-500 uppercase">
+                  <tr>
+                    <th class="px-4 py-3 text-left">Região</th>
+                    <th class="px-4 py-3 text-right">Remessas</th>
+                    <th class="px-4 py-3 text-right">Peso (kg)</th>
+                    <th class="px-4 py-3 text-right">Vol (m³)</th>
+                    <th class="px-4 py-3 text-center">FTL?</th>
+                    <template x-for="t in transportadoras" :key="t.codigo">
+                      <th class="px-4 py-3 text-right" x-text="t.codigo"></th>
+                    </template>
+                    <th class="px-4 py-3 text-center">Melhor</th>
+                    <th class="px-4 py-3 text-right">Economia</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-50">
+                  <template x-for="rot in cotacao" :key="rot.regiao">
+                    <tr class="hover:bg-gray-50">
+                      <td class="px-4 py-3 font-medium text-gray-700" x-text="regiaoLabel(rot.regiao)"></td>
+                      <td class="px-4 py-3 text-right text-gray-600" x-text="rot.total_remessas"></td>
+                      <td class="px-4 py-3 text-right text-gray-600" x-text="rot.peso_total_kg.toFixed(0)"></td>
+                      <td class="px-4 py-3 text-right text-gray-600" x-text="rot.volume_total_m3.toFixed(1)"></td>
+                      <td class="px-4 py-3 text-center">
+                        <span x-show="rot.ftl_viavel" class="text-xs bg-indigo-100 text-indigo-700 font-bold px-2 py-0.5 rounded-full">FTL</span>
+                        <span x-show="!rot.ftl_viavel" class="text-gray-300 text-xs">—</span>
+                      </td>
+                      <template x-for="t in transportadoras" :key="t.codigo">
+                        <td class="px-4 py-3 text-right">
+                          <template x-if="rot.cotacoes.find(c=>c.codigo===t.codigo)">
+                            <span>
+                              <span :class="rot.melhor_transportadora===t.codigo ? 'text-green-700 font-bold' : 'text-gray-500'"
+                                    x-text="'R$ ' + (rot.cotacoes.find(c=>c.codigo===t.codigo)?.custo_melhor||0).toLocaleString('pt-BR',{minimumFractionDigits:0})"></span>
+                              <span class="block text-xs text-gray-400"
+                                    x-text="rot.cotacoes.find(c=>c.codigo===t.codigo)?.melhor_opcao"></span>
+                            </span>
+                          </template>
+                          <template x-if="!rot.cotacoes.find(c=>c.codigo===t.codigo)">
+                            <span class="text-gray-300 text-xs">—</span>
+                          </template>
+                        </td>
+                      </template>
+                      <td class="px-4 py-3 text-center">
+                        <span class="text-xs bg-green-100 text-green-700 font-bold px-2 py-0.5 rounded-full"
+                              x-text="rot.melhor_transportadora || '—'"></span>
+                      </td>
+                      <td class="px-4 py-3 text-right text-green-600 font-semibold"
+                          x-text="'R$ ' + (rot.economia_vs_pior||0).toLocaleString('pt-BR',{minimumFractionDigits:0})"></td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div><!-- /transportadoras -->
+
+
+        <!-- ═══════════════════════════════════════════════════════════════
+             PÁGINA: HISTÓRICO DE ONDAS
+        ════════════════════════════════════════════════════════════════ -->
+        <div x-show="page==='historico_ondas'" class="p-6 space-y-6">
+
+          <!-- Filtros -->
+          <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5 flex items-center gap-4 flex-wrap">
+            <div>
+              <label class="text-xs text-gray-500 block mb-1">Período</label>
+              <select x-model="historicoOndasPeriodo" @change="loadHistoricoOndas()"
+                      class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 ring-bd">
+                <option value="hoje">Hoje</option>
+                <option value="ontem">Ontem</option>
+                <option value="semana">Últimos 7 dias</option>
+                <option value="mes">Este mês</option>
+                <option value="trimestre">Últimos 3 meses</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-xs text-gray-500 block mb-1">Centro de Distribuição</label>
+              <select x-model="historicoOndasCd" @change="loadHistoricoOndas()"
+                      class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 ring-bd">
+                <option value="">Todos os CDs</option>
+                <option value="OSA">Osasco (OSA)</option>
+                <option value="ITJ">Itajaí (ITJ)</option>
+              </select>
+            </div>
+            <button @click="loadHistoricoOndas()" class="ml-auto text-xs bd-blue hover:underline">Atualizar</button>
+          </div>
+
+          <!-- Tabela de planos -->
+          <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <div x-show="historicoOndasCarregando" class="px-5 py-8 text-center text-gray-400 text-sm">Carregando...</div>
+            <div x-show="!historicoOndasCarregando && historicoOndas.length === 0"
+                 class="px-5 py-8 text-center text-gray-400 text-sm">
+              Nenhum plano encontrado para o período selecionado.
+            </div>
+
+            <table x-show="!historicoOndasCarregando && historicoOndas.length > 0" class="w-full text-sm">
+              <thead class="bg-gray-50 text-xs text-gray-500 uppercase">
+                <tr>
+                  <th class="px-5 py-3 text-left">Data</th>
+                  <th class="px-5 py-3 text-left">CD</th>
+                  <th class="px-5 py-3 text-right">Ondas</th>
+                  <th class="px-5 py-3 text-right">Remessas</th>
+                  <th class="px-5 py-3 text-right">OTIF</th>
+                  <th class="px-5 py-3 text-center">Status</th>
+                  <th class="px-5 py-3 text-center"></th>
+                </tr>
+              </thead>
+              <template x-for="plano in historicoOndas" :key="plano.plano_id">
+                <tbody>
+                  <tr class="border-t border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors"
+                      @click="togglePlanoHistorico(plano.plano_id)">
+                    <td class="px-5 py-3 font-medium text-gray-700 capitalize"
+                        x-text="new Date(plano.data_plano+'T00:00:00').toLocaleDateString('pt-BR', {weekday:'short', day:'2-digit', month:'2-digit'})"></td>
+                    <td class="px-5 py-3 text-gray-600" x-text="plano.cd_nome || plano.cd || '—'"></td>
+                    <td class="px-5 py-3 text-right text-gray-700" x-text="plano.total_ondas"></td>
+                    <td class="px-5 py-3 text-right text-gray-700" x-text="plano.total_remessas"></td>
+                    <td class="px-5 py-3 text-right font-semibold"
+                        :class="plano.otif_pct===null ? 'text-gray-300' : ''"
+                        :style="plano.otif_pct===null ? '' : (plano.otif_pct>=95?'color:#00A650':'color:#DC2626')"
+                        x-text="plano.otif_pct===null ? '—' : plano.otif_pct.toFixed(1)+'%'"></td>
+                    <td class="px-5 py-3 text-center">
+                      <span class="text-xs font-bold px-2.5 py-1 rounded-full"
+                            :class="badgeStatusGeral(plano.status_geral).bg + ' ' + badgeStatusGeral(plano.status_geral).text"
+                            x-text="badgeStatusGeral(plano.status_geral).label"></span>
+                    </td>
+                    <td class="px-5 py-3 text-center text-xs text-gray-400">
+                      <span x-show="planoExpandidoHistorico !== plano.plano_id">▼</span>
+                      <span x-show="planoExpandidoHistorico === plano.plano_id">▲</span>
+                    </td>
+                  </tr>
+
+                  <tr x-show="planoExpandidoHistorico === plano.plano_id" x-transition>
+                    <td colspan="7" class="bg-slate-50 px-5 py-4 border-t border-blue-100">
+                      <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Ondas do plano</div>
+                      <div class="space-y-2">
+                        <template x-for="onda in plano.ondas" :key="onda.id">
+                          <div class="bg-white border border-gray-100 rounded-lg overflow-hidden">
+                            <div class="px-4 py-2.5 flex items-center gap-3">
+                              <div class="flex items-center gap-3 cursor-pointer flex-1 min-w-0"
+                                   @click="toggleOndaHistorico(onda.id)">
+                                <span class="text-xs text-gray-400 shrink-0"
+                                      x-text="ondaExpandidaHistorico===onda.id ? '▲' : '▼'"></span>
+                                <div class="min-w-0">
+                                  <div class="text-sm font-medium text-gray-700 truncate" x-text="onda.nome"></div>
+                                  <div class="text-xs text-gray-400"
+                                       x-text="(onda.transportadora||'—') + ' · ' + onda.total_remessas + ' remessa(s)'"></div>
+                                </div>
+                              </div>
+                              <span class="text-xs font-bold px-2 py-0.5 rounded-full shrink-0"
+                                    :class="onda.status==='fechada' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'"
+                                    x-text="onda.status==='fechada' ? 'Fechada' : 'Aberta'"></span>
+                              <button x-show="onda.status !== 'fechada'"
+                                      @click="registrarRetornoOnda(onda.id)"
+                                      class="shrink-0 text-xs bg-amber-500 hover:bg-amber-600 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors">
+                                Registrar Retorno
+                              </button>
+                            </div>
+
+                            <!-- Remessas + fechamento -->
+                            <div x-show="ondaExpandidaHistorico === onda.id" x-transition
+                                 class="border-t border-gray-100 px-4 py-3 bg-gray-50">
+                              <div x-show="onda.justificativa" class="mb-3 text-xs text-gray-600 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 whitespace-pre-line">
+                                <span class="font-semibold text-blue-800">Por que essas decisões:</span> <span x-text="onda.justificativa"></span>
+                              </div>
+                              <div x-show="remessasOndaCarregando" class="text-xs text-gray-400 py-2">Carregando remessas...</div>
+
+                              <!-- Modo leitura -->
+                              <div x-show="!remessasOndaCarregando && fechamentoOndaAtiva !== onda.id" class="overflow-x-auto">
+                                <table class="w-full text-xs">
+                                  <thead class="text-gray-400">
+                                    <tr>
+                                      <th class="text-left pb-1">Remessa</th>
+                                      <th class="text-left pb-1">Cliente</th>
+                                      <th class="text-left pb-1">Status</th>
+                                      <th class="text-right pb-1">Valor NF</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    <template x-for="r in remessasOndaHistorico" :key="r.id">
+                                      <tr class="border-t border-gray-100">
+                                        <td class="py-1.5 font-mono" x-text="r.numero_remessa"></td>
+                                        <td class="py-1.5 text-gray-600 truncate max-w-[220px]" x-text="r.cliente"></td>
+                                        <td class="py-1.5">
+                                          <span class="px-1.5 py-0.5 rounded text-xs" :class="'status-'+r.status" x-text="r.status"></span>
+                                        </td>
+                                        <td class="py-1.5 text-right text-gray-500"
+                                            x-text="'R$ ' + r.valor_nf.toLocaleString('pt-BR',{minimumFractionDigits:0})"></td>
+                                      </tr>
+                                    </template>
+                                  </tbody>
+                                </table>
+                              </div>
+
+                              <!-- Painel de fechamento inline -->
+                              <div x-show="fechamentoOndaAtiva === onda.id" class="space-y-2">
+                                <div class="text-xs font-semibold text-gray-600 mb-1">
+                                  Retorno do romaneio — informe o resultado de cada remessa
+                                </div>
+                                <div class="divide-y divide-gray-100 bg-white rounded-lg border border-gray-200">
+                                  <template x-for="r in remessasOndaHistorico" :key="r.id">
+                                    <div class="flex items-center justify-between gap-3 px-3 py-2">
+                                      <div class="min-w-0">
+                                        <div class="text-xs font-mono font-semibold text-gray-700" x-text="r.numero_remessa"></div>
+                                        <div class="text-xs text-gray-400 truncate" x-text="r.cliente"></div>
+                                      </div>
+                                      <select x-model="fechamentoStatusPorRemessa[r.id]"
+                                              class="border border-gray-300 rounded-lg px-2 py-1 text-xs shrink-0">
+                                        <option value="entregue">Entregue</option>
+                                        <option value="tentativa">Tentativa</option>
+                                        <option value="devolvido">Devolvido</option>
+                                      </select>
+                                    </div>
+                                  </template>
+                                </div>
+                                <div class="flex items-center gap-2 pt-1">
+                                  <button @click="confirmarFechamentoOnda(onda.id)" :disabled="fechandoOnda"
+                                          class="bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors">
+                                    <span x-show="!fechandoOnda">Confirmar Fechamento</span>
+                                    <span x-show="fechandoOnda">Salvando...</span>
+                                  </button>
+                                  <button @click="cancelarFechamentoOnda()" class="text-xs text-gray-500 hover:text-gray-700 px-3 py-2">
+                                    Cancelar
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </template>
+                      </div>
+                    </td>
+                  </tr>
+                </tbody>
+              </template>
+            </table>
+          </div>
+        </div><!-- /historico_ondas -->
+
+
+        <!-- ═══════════════════════════════════════════════════════════════
+             PÁGINA: MODO DE CONTINGÊNCIA (OFFLINE)
+        ════════════════════════════════════════════════════════════════ -->
+        <div x-show="page==='contingencia'" class="p-6 space-y-6"
+             x-init="if(page==='contingencia') carregarRemessasLocais()">
+
+          <!-- Cabeçalho de status -->
+          <div :class="modoContingencia ? 'bg-amber-50 border-amber-200' : 'bg-green-50 border-green-200'"
+               class="rounded-xl border p-5 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <span class="text-3xl" x-text="modoContingencia ? '🔌' : '✅'"></span>
+              <div>
+                <div class="text-sm font-bold"
+                     :class="modoContingencia ? 'text-amber-800' : 'text-green-800'"
+                     x-text="modoContingencia ? 'Sistema em Modo de Contingência — backend inacessível' : 'Backend acessível — modo de contingência disponível como fallback'"></div>
+                <div class="text-xs mt-0.5"
+                     :class="modoContingencia ? 'text-amber-600' : 'text-green-600'">
+                  Remessas adicionadas aqui serão sincronizadas automaticamente ao reconectar.
+                </div>
+              </div>
+            </div>
+            <div class="text-right shrink-0">
+              <div class="text-2xl font-black"
+                   :class="modoContingencia ? 'text-amber-700' : 'text-gray-700'"
+                   x-text="remessasLocais.length"></div>
+              <div class="text-xs text-gray-500">remessas locais</div>
+            </div>
+          </div>
+
+          <!-- Upload de planilha — processada inteiramente no browser -->
+          <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+            <div class="text-sm font-semibold text-gray-700 mb-1">Carregar Planilha do Backlog</div>
+            <div class="text-xs text-gray-400 mb-4">
+              A planilha é lida localmente pelo navegador — nada é enviado ao servidor até a conexão voltar.
+            </div>
+
+            <div class="upload-drop border-2 border-dashed border-gray-300 rounded-xl p-8 text-center cursor-pointer"
+                 @dragover.prevent="$el.classList.add('dragover')"
+                 @dragleave.prevent="$el.classList.remove('dragover')"
+                 @drop.prevent="$el.classList.remove('dragover'); handleDropContingencia($event)"
+                 @click="$refs.fileInputContingencia.click()">
+              <input type="file" x-ref="fileInputContingencia" class="hidden"
+                     accept=".xlsx,.xls,.csv"
+                     @change="processarPlanilhaLocal($event.target.files[0]); $event.target.value = ''" />
+              <div class="text-4xl mb-3">📂</div>
+              <div class="text-sm font-medium text-gray-600">Arraste ou clique para selecionar a planilha</div>
+              <div class="text-xs text-gray-400 mt-1">SAP Export (.xlsx) — coluna "Remessa" · UPS WMS Export (.xlsx/.csv) — coluna "ID_UPS"</div>
+            </div>
+
+            <div x-show="resumoPlanilhaContingencia"
+                 class="mt-4 bg-green-50 border border-green-200 rounded-lg px-4 py-3 text-sm text-green-800 flex items-center gap-2">
+              <span>✅</span>
+              <span>
+                <strong x-text="resumoPlanilhaContingencia?.total"></strong>
+                remessa(s) lida(s) do arquivo <strong x-text="resumoPlanilhaContingencia?.arquivo"></strong>.
+                Aguardando sincronização com o servidor.
+              </span>
+            </div>
+
+            <div class="flex items-center gap-3 mt-5">
+              <button @click="gerarPdfContingencia()"
+                      :disabled="remessasLocais.length === 0"
+                      class="border border-gray-300 hover:bg-gray-50 disabled:opacity-40 text-gray-700 font-semibold text-sm px-5 py-2.5 rounded-lg transition-colors flex items-center gap-2">
+                <span>📄 Imprimir Onda (PDF)</span>
+              </button>
+              <span x-show="remessasLocais.length > 0"
+                    class="ml-auto text-xs bg-amber-100 text-amber-700 font-bold px-3 py-1.5 rounded-full"
+                    x-text="remessasLocais.length + ' remessa(s) aguardando sincronização'"></span>
+            </div>
+          </div>
+
+          <!-- Lista de remessas locais -->
+          <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+              <div class="text-sm font-semibold text-gray-700">Remessas Registradas Localmente</div>
+              <button @click="carregarRemessasLocais()" class="text-xs bd-blue hover:underline">Atualizar</button>
+            </div>
+
+            <div x-show="remessasLocais.length === 0"
+                 class="px-5 py-8 text-center text-gray-400 text-sm">
+              Nenhuma remessa registrada localmente nesta sessão.
+            </div>
+
+            <div x-show="remessasLocais.length > 0" class="overflow-x-auto">
+              <table class="w-full text-sm">
+                <thead class="bg-gray-50 text-xs text-gray-500 uppercase">
+                  <tr>
+                    <th class="px-4 py-3 text-left">Remessa</th>
+                    <th class="px-4 py-3 text-left">Cliente</th>
+                    <th class="px-4 py-3 text-left">Cidade</th>
+                    <th class="px-4 py-3 text-right">Volume</th>
+                    <th class="px-4 py-3 text-right">Peso</th>
+                    <th class="px-4 py-3 text-left">Transportadora</th>
+                    <th class="px-4 py-3 text-center">Status</th>
+                    <th class="px-4 py-3 text-left">Registrado em</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-50">
+                  <template x-for="r in remessasLocais" :key="r.id_local">
+                    <tr class="hover:bg-amber-50">
+                      <td class="px-4 py-3 font-mono text-xs font-semibold text-amber-700" x-text="r.numero || '—'"></td>
+                      <td class="px-4 py-3 text-gray-700 max-w-xs truncate" x-text="r.cliente || '—'"></td>
+                      <td class="px-4 py-3 text-gray-500 text-xs" x-text="r.cidade || '—'"></td>
+                      <td class="px-4 py-3 text-right text-gray-600" x-text="(r.volume || 0) + ' m³'"></td>
+                      <td class="px-4 py-3 text-right text-gray-600" x-text="(r.peso || 0) + ' kg'"></td>
+                      <td class="px-4 py-3 text-gray-700 text-xs" x-text="r.transportadora || '—'"></td>
+                      <td class="px-4 py-3 text-center">
+                        <span :class="r.sincronizado ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'"
+                              class="text-xs font-semibold px-2 py-0.5 rounded-full"
+                              x-text="r.sincronizado ? 'Sincronizado' : 'Pendente'"></span>
+                      </td>
+                      <td class="px-4 py-3 text-xs text-gray-400"
+                          x-text="r.criado_em ? new Date(r.criado_em).toLocaleString('pt-BR') : '—'"></td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div><!-- /contingencia -->
+
+      </div><!-- /scroll area -->
+    </main>
+  </div><!-- /layout -->
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       BOTÃO FLUTUANTE: ASSISTENTE (visível em todas as páginas)
+  ════════════════════════════════════════════════════════════════ -->
+  <button x-show="!chatAssistenteAberto" x-cloak
+          @click="abrirAssistenteGeral()"
+          class="fixed bottom-5 right-5 z-[60] bg-bd hover:bg-[#004070] text-white font-semibold text-sm px-4 py-3 rounded-full shadow-2xl flex items-center gap-2 transition-colors">
+    <span class="text-lg leading-none">💬</span>
+    <span>Assistente</span>
+  </button>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       POPUP: ASSISTENTE DE DIAGNÓSTICO
+  ════════════════════════════════════════════════════════════════ -->
+  <div x-show="chatAssistenteAberto" x-cloak
+       x-transition:enter="transition ease-out duration-200"
+       x-transition:enter-start="opacity-0 translate-y-4"
+       x-transition:enter-end="opacity-100 translate-y-0"
+       class="fixed bottom-5 right-5 z-[60] w-96 max-w-[calc(100vw-2.5rem)] bg-white rounded-xl shadow-2xl border border-gray-200 flex flex-col"
+       style="height: 480px; display:none;">
+
+    <!-- Cabeçalho -->
+    <div class="bg-bd text-white px-4 py-3 rounded-t-xl flex items-center justify-between shrink-0">
+      <div class="min-w-0">
+        <div class="text-sm font-bold">Assistente de Diagnóstico — PEO-BD</div>
+        <div class="text-xs text-blue-200 truncate"
+             x-text="chatAssistenteTipoErro?.codigo || 'Visão geral do sistema'"></div>
+      </div>
+      <button @click="fecharChatAssistente()" class="text-white hover:text-gray-200 text-lg leading-none px-1">✕</button>
+    </div>
+
+    <!-- Mensagens -->
+    <div class="flex-1 overflow-y-auto px-4 py-3 space-y-3 bg-gray-50" x-ref="chatScroll">
+      <template x-for="(m, i) in chatMensagens" :key="i">
+        <div class="flex" :class="m.role === 'user' ? 'justify-end' : 'justify-start'">
+          <div class="max-w-[85%] rounded-lg px-3 py-2 text-sm whitespace-pre-line"
+               :class="m.role === 'user'
+                       ? 'bg-bd text-white'
+                       : (m.erro ? 'bg-red-50 text-red-700 border border-red-100' : 'bg-white text-gray-700 border border-gray-200')"
+               x-text="m.content"></div>
+        </div>
+      </template>
+      <div x-show="chatEnviando" class="flex justify-start">
+        <div class="bg-white text-gray-400 border border-gray-200 rounded-lg px-3 py-2 text-sm">Digitando...</div>
+      </div>
+    </div>
+
+    <!-- Input -->
+    <div class="border-t border-gray-100 p-3 flex items-center gap-2 shrink-0">
+      <input x-model="chatInputAtual"
+             @keydown.enter="enviarMensagemChat()"
+             :disabled="chatEnviando"
+             placeholder="Digite sua dúvida..."
+             class="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 ring-bd disabled:opacity-50" />
+      <button @click="enviarMensagemChat()"
+              :disabled="chatEnviando || !chatInputAtual.trim()"
+              class="bg-bd hover:bg-[#004070] disabled:opacity-40 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors shrink-0">
+        Enviar
+      </button>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       MODAL: DETALHE DO CLIENTE
+  ════════════════════════════════════════════════════════════════ -->
+  <div x-show="clienteModal" x-cloak
+       class="fixed inset-0 z-50 flex items-center justify-center"
+       @keydown.escape.window="fecharCliente()">
+
+    <!-- Overlay -->
+    <div class="absolute inset-0 bg-black bg-opacity-40" @click="fecharCliente()"></div>
+
+    <!-- Modal box -->
+    <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto mx-4">
+
+      <template x-if="clienteDetalhe">
+        <div>
+          <!-- Header -->
+          <div class="bg-bd px-6 py-5 rounded-t-2xl">
+            <div class="flex items-start justify-between">
+              <div>
+                <div class="text-white font-bold text-lg leading-tight" x-text="clienteDetalhe.razao_social"></div>
+                <div class="flex items-center gap-2 mt-1.5">
+                  <span class="text-blue-300 text-xs" x-text="clienteDetalhe.tipo"></span>
+                  <span class="text-blue-400">·</span>
+                  <span class="text-blue-300 text-xs" x-text="(clienteDetalhe.cidade||'') + '/' + (clienteDetalhe.uf||'')"></span>
+                  <template x-if="clienteDetalhe.contrato_ata">
+                    <span class="bg-purple-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">ATA</span>
+                  </template>
+                </div>
+              </div>
+              <button @click="fecharCliente()" class="text-blue-300 hover:text-white text-2xl leading-none mt-1">×</button>
+            </div>
+          </div>
+
+          <div class="p-6 space-y-5">
+
+            <!-- KPIs -->
+            <div class="grid grid-cols-4 gap-3">
+              <div class="bg-gray-50 rounded-xl p-4 text-center">
+                <div class="text-2xl font-black bd-blue" x-text="clienteDetalhe.resumo_remessas?.total || 0"></div>
+                <div class="text-xs text-gray-400 mt-1">Pedidos Total</div>
+              </div>
+              <div class="bg-gray-50 rounded-xl p-4 text-center">
+                <div class="text-lg font-black text-gray-700"
+                     x-text="'R$ ' + (clienteDetalhe.valor_total||0).toLocaleString('pt-BR',{maximumFractionDigits:0})"></div>
+                <div class="text-xs text-gray-400 mt-1">Valor Total</div>
+              </div>
+              <div class="bg-green-50 rounded-xl p-4 text-center">
+                <div class="text-2xl font-black text-green-600" x-text="clienteDetalhe.resumo_remessas?.entregues || 0"></div>
+                <div class="text-xs text-gray-400 mt-1">Entregues</div>
+              </div>
+              <div class="bg-amber-50 rounded-xl p-4 text-center">
+                <div class="text-2xl font-black text-amber-500" x-text="clienteDetalhe.resumo_remessas?.pendentes || 0"></div>
+                <div class="text-xs text-gray-400 mt-1">Pendentes</div>
+              </div>
+            </div>
+
+            <!-- Informações -->
+            <div class="grid grid-cols-2 gap-3 text-sm">
+              <div class="bg-gray-50 rounded-lg p-3">
+                <div class="text-xs text-gray-400 mb-1">Janela de entrega</div>
+                <div class="font-semibold text-gray-700"
+                     x-text="clienteDetalhe.janela_flexivel ? 'Flexível' : ((clienteDetalhe.janela_inicio||'') + ' – ' + (clienteDetalhe.janela_fim||''))"></div>
+              </div>
+              <div class="bg-gray-50 rounded-lg p-3">
+                <div class="text-xs text-gray-400 mb-1">Armazenagem própria</div>
+                <div class="font-semibold" :class="clienteDetalhe.tem_armazenagem ? 'text-green-600' : 'text-red-500'"
+                     x-text="clienteDetalhe.tem_armazenagem ? 'Sim — aceita FTL' : 'Não — apenas fracionado'"></div>
+              </div>
+              <div class="bg-gray-50 rounded-lg p-3">
+                <div class="text-xs text-gray-400 mb-1">Contrato ATA</div>
+                <div class="font-semibold text-gray-700"
+                     x-text="clienteDetalhe.contrato_ata ? 'Sim — ' + clienteDetalhe.prazo_ata_dias + ' dias' : 'Não'"></div>
+              </div>
+              <div class="bg-gray-50 rounded-lg p-3">
+                <div class="text-xs text-gray-400 mb-1">Possibilidade FTL</div>
+                <div class="font-semibold" :class="clienteDetalhe.ftl_possivel ? 'text-indigo-600' : 'text-gray-400'">
+                  <span x-text="clienteDetalhe.ftl_possivel ? 'Sim — ' + clienteDetalhe.volume_acumulado_m3.toFixed(1) + ' m³ acum.' : 'Volume insuficiente (' + clienteDetalhe.volume_acumulado_m3.toFixed(1) + ' m³)'"></span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Alertas do cliente -->
+            <div>
+              <div class="text-sm font-semibold text-gray-700 mb-3">
+                Alertas Ativos
+                <span x-show="clienteDetalhe.alertas?.length > 0"
+                      class="ml-2 bg-red-100 text-red-700 text-xs font-bold px-2 py-0.5 rounded-full"
+                      x-text="clienteDetalhe.alertas.length"></span>
+              </div>
+              <div x-show="clienteDetalhe.alertas?.length === 0"
+                   class="text-sm text-gray-400 bg-gray-50 rounded-lg px-4 py-3">
+                Nenhum alerta ativo para este cliente.
+              </div>
+              <div class="space-y-2">
+                <template x-for="a in clienteDetalhe.alertas" :key="a.id">
+                  <div class="rounded-lg p-3 border text-sm"
+                       :class="'severity-' + a.severidade">
+                    <div class="flex items-center gap-2 mb-1">
+                      <span x-show="a.severidade==='critica'">🔴</span>
+                      <span x-show="a.severidade==='alta'">🟠</span>
+                      <span x-show="a.severidade==='media'">🔵</span>
+                      <span class="font-semibold" x-text="a.titulo"></span>
+                    </div>
+                    <p class="text-xs opacity-80 leading-relaxed" x-text="a.descricao"></p>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+          </div><!-- /p-6 -->
+        </div>
+      </template>
+    </div><!-- /modal box -->
+  </div><!-- /modal -->
+
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       MODAL: DETALHE DO ALERTA
+  ════════════════════════════════════════════════════════════════ -->
+  <div x-show="alertaModal" x-cloak
+       class="fixed inset-0 z-50 flex items-center justify-center"
+       @keydown.escape.window="fecharAlertaModal()">
+    <div class="absolute inset-0 bg-black bg-opacity-40" @click="fecharAlertaModal()"></div>
+    <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto mx-4">
+      <template x-if="alertaDetalhe">
+        <div>
+          <div class="bg-bd px-6 py-5 rounded-t-2xl">
+            <div class="flex items-start justify-between">
+              <div>
+                <div class="text-white font-bold text-lg leading-tight" x-text="alertaDetalhe.titulo"></div>
+                <div class="flex items-center gap-2 mt-1.5">
+                  <span class="text-xs font-semibold px-2 py-0.5 rounded-full"
+                        :class="'severity-' + alertaDetalhe.severidade"
+                        x-text="alertaDetalhe.severidade?.toUpperCase()"></span>
+                  <span class="text-blue-300 text-xs font-mono" x-text="alertaDetalhe.tipo"></span>
+                </div>
+              </div>
+              <button @click="fecharAlertaModal()" class="text-blue-300 hover:text-white text-2xl leading-none mt-1">×</button>
+            </div>
+          </div>
+
+          <div class="p-6 space-y-5">
+            <div class="grid grid-cols-2 gap-3 text-sm">
+              <div class="bg-gray-50 rounded-lg p-3">
+                <div class="text-xs text-gray-400 mb-1">Remessa associada</div>
+                <div class="font-semibold text-gray-700" x-text="alertaDetalhe.remessa_id || '—'"></div>
+              </div>
+              <div class="bg-gray-50 rounded-lg p-3">
+                <div class="text-xs text-gray-400 mb-1">Criado em</div>
+                <div class="font-semibold text-gray-700"
+                     x-text="alertaDetalhe.criado_em ? new Date(alertaDetalhe.criado_em).toLocaleString('pt-BR') : '—'"></div>
+              </div>
+            </div>
+
+            <div>
+              <div class="text-xs text-gray-400 mb-1">Descrição completa</div>
+              <p class="text-sm text-gray-700 bg-gray-50 rounded-lg p-3 leading-relaxed" x-text="alertaDetalhe.descricao"></p>
+            </div>
+
+            <div>
+              <div class="text-sm font-semibold text-gray-700 mb-2">Histórico de ações</div>
+              <div x-show="alertaHistoricoCarregando" class="text-xs text-gray-400 py-2">Carregando histórico...</div>
+              <div x-show="!alertaHistoricoCarregando && alertaHistorico.length === 0"
+                   class="text-sm text-gray-400 bg-gray-50 rounded-lg px-4 py-3">
+                Nenhuma ação registrada para esta remessa.
+              </div>
+              <div class="space-y-1.5">
+                <template x-for="ev in alertaHistorico" :key="ev.id">
+                  <div class="bg-gray-50 rounded-lg px-3 py-2 text-xs">
+                    <div class="text-gray-700 leading-snug" x-text="ev.descricao"></div>
+                    <div class="text-gray-400 mt-1 space-x-2">
+                      <span class="bg-gray-100 px-1 rounded" x-text="ev.tipo_evento"></span>
+                      <span x-text="ev.ator_nome || ev.ator_tipo"></span>
+                      <span x-text="new Date(ev.timestamp).toLocaleString('pt-BR')"></span>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            <div class="flex justify-end gap-3 pt-2">
+              <button @click="fecharAlertaModal()"
+                      class="text-sm border border-gray-300 text-gray-600 px-4 py-2 rounded-lg hover:bg-gray-50">
+                Fechar
+              </button>
+              <button x-show="!alertaDetalhe.resolvido" @click="resolverAlerta(alertaDetalhe.id)"
+                      class="text-sm bg-bd text-white font-semibold px-4 py-2 rounded-lg hover:bg-[#004070]">
+                Resolver Alerta
+              </button>
+            </div>
+          </div>
+        </div>
+      </template>
+    </div>
+  </div><!-- /modal alerta -->
+
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       MODAL: DETALHE DA REMESSA
+  ════════════════════════════════════════════════════════════════ -->
+  <div x-show="remessaModal" x-cloak
+       class="fixed inset-0 z-50 flex items-center justify-center"
+       @keydown.escape.window="fecharRemessaModal()">
+    <div class="absolute inset-0 bg-black bg-opacity-40" @click="fecharRemessaModal()"></div>
+    <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto mx-4">
+      <template x-if="remessaDetalhe">
+        <div>
+          <div class="bg-bd px-6 py-5 rounded-t-2xl">
+            <div class="flex items-start justify-between">
+              <div>
+                <div class="text-white font-bold text-lg leading-tight font-mono" x-text="remessaDetalhe.numero"></div>
+                <div class="flex items-center gap-2 mt-1.5">
+                  <span class="text-blue-300 text-xs" x-text="remessaDetalhe.cliente || '—'"></span>
+                  <span class="text-blue-400">·</span>
+                  <span class="text-blue-300 text-xs" x-text="(remessaDetalhe.cidade||'') + '/' + (remessaDetalhe.uf||'')"></span>
+                </div>
+              </div>
+              <button @click="fecharRemessaModal()" class="text-blue-300 hover:text-white text-2xl leading-none mt-1">×</button>
+            </div>
+          </div>
+
+          <div class="p-6 space-y-5">
+            <div class="grid grid-cols-3 gap-3 text-sm">
+              <div class="bg-gray-50 rounded-lg p-3">
+                <div class="text-xs text-gray-400 mb-1">Status atual</div>
+                <span class="text-xs font-semibold px-2 py-0.5 rounded-full" :class="'status-' + remessaDetalhe.status"
+                      x-text="remessaDetalhe.status?.replace(/_/g,' ')"></span>
+              </div>
+              <div class="bg-gray-50 rounded-lg p-3">
+                <div class="text-xs text-gray-400 mb-1">Prioridade</div>
+                <div class="font-semibold text-gray-700" x-text="remessaDetalhe.prioridade"></div>
+              </div>
+              <div class="bg-gray-50 rounded-lg p-3">
+                <div class="text-xs text-gray-400 mb-1">Janela de entrega</div>
+                <div class="font-semibold text-gray-700" x-text="remessaDetalhe.janela || 'Flexível'"></div>
+              </div>
+              <div class="bg-gray-50 rounded-lg p-3">
+                <div class="text-xs text-gray-400 mb-1">Volume</div>
+                <div class="font-semibold text-gray-700" x-text="(remessaDetalhe.volume_m3||0).toFixed(2) + ' m³'"></div>
+              </div>
+              <div class="bg-gray-50 rounded-lg p-3">
+                <div class="text-xs text-gray-400 mb-1">Peso</div>
+                <div class="font-semibold text-gray-700" x-text="(remessaDetalhe.peso_kg||0).toFixed(0) + ' kg'"></div>
+              </div>
+              <div class="bg-gray-50 rounded-lg p-3">
+                <div class="text-xs text-gray-400 mb-1">Valor NF</div>
+                <div class="font-semibold text-gray-700"
+                     x-text="'R$ ' + (remessaDetalhe.valor_nf||0).toLocaleString('pt-BR',{minimumFractionDigits:0})"></div>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3 text-sm">
+              <div class="bg-gray-50 rounded-lg p-3">
+                <div class="text-xs text-gray-400 mb-1">Nota Fiscal</div>
+                <div class="font-semibold" :class="remessaDetalhe.nf_emitida ? 'text-green-600' : 'text-red-500'"
+                     x-text="remessaDetalhe.nf_emitida ? 'Emitida' : 'Pendente'"></div>
+              </div>
+              <div class="bg-gray-50 rounded-lg p-3">
+                <div class="text-xs text-gray-400 mb-1">Contrato ATA</div>
+                <div class="font-semibold text-gray-700"
+                     x-text="remessaDetalhe.is_ata ? ('Sim' + (remessaDetalhe.dias_restantes !== null ? ' — ' + remessaDetalhe.dias_restantes + 'd restantes' : '')) : 'Não'"></div>
+              </div>
+            </div>
+
+            <div>
+              <div class="text-sm font-semibold text-gray-700 mb-2">Histórico de eventos</div>
+              <div x-show="remessaHistoricoCarregando" class="text-xs text-gray-400 py-2">Carregando histórico...</div>
+              <div x-show="!remessaHistoricoCarregando && remessaHistorico.length === 0"
+                   class="text-sm text-gray-400 bg-gray-50 rounded-lg px-4 py-3">
+                Nenhum evento registrado para esta remessa.
+              </div>
+              <div class="space-y-1.5 max-h-64 overflow-y-auto">
+                <template x-for="ev in remessaHistorico" :key="ev.id">
+                  <div class="bg-gray-50 rounded-lg px-3 py-2 text-xs">
+                    <div class="text-gray-700 leading-snug" x-text="ev.descricao"></div>
+                    <div class="text-gray-400 mt-1 space-x-2">
+                      <span class="bg-gray-100 px-1 rounded" x-text="ev.tipo_evento"></span>
+                      <span x-text="ev.ator_nome || ev.ator_tipo"></span>
+                      <span x-text="new Date(ev.timestamp).toLocaleString('pt-BR')"></span>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+    </div>
+  </div><!-- /modal remessa -->
+
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       MODAL: DETALHE DO EVENTO DE TRANSPORTADORA
+  ════════════════════════════════════════════════════════════════ -->
+  <div x-show="eventoModal" x-cloak
+       class="fixed inset-0 z-50 flex items-center justify-center"
+       @keydown.escape.window="fecharEventoModal()">
+    <div class="absolute inset-0 bg-black bg-opacity-40" @click="fecharEventoModal()"></div>
+    <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto mx-4">
+      <template x-if="eventoDetalhe">
+        <div>
+          <div class="bg-bd px-6 py-5 rounded-t-2xl flex items-start justify-between">
+            <div>
+              <div class="text-white font-bold text-lg leading-tight" x-text="eventoDetalhe.tipo_evento"></div>
+              <div class="text-blue-300 text-xs mt-1"
+                   x-text="eventoDetalhe.timestamp ? new Date(eventoDetalhe.timestamp).toLocaleString('pt-BR') : '—'"></div>
+            </div>
+            <button @click="fecharEventoModal()" class="text-blue-300 hover:text-white text-2xl leading-none mt-1">×</button>
+          </div>
+
+          <div class="p-6 space-y-4">
+            <div>
+              <div class="text-xs text-gray-400 mb-1">Descrição</div>
+              <p class="text-sm text-gray-700 bg-gray-50 rounded-lg p-3 leading-relaxed" x-text="eventoDetalhe.descricao"></p>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3 text-sm">
+              <div class="bg-gray-50 rounded-lg p-3">
+                <div class="text-xs text-gray-400 mb-1">Agente / usuário responsável</div>
+                <div class="font-semibold text-gray-700" x-text="(eventoDetalhe.ator_nome || '—') + ' (' + eventoDetalhe.ator_tipo + ')'"></div>
+              </div>
+              <div class="bg-gray-50 rounded-lg p-3">
+                <div class="text-xs text-gray-400 mb-1">Remessa associada</div>
+                <div class="font-semibold text-gray-700" x-text="eventoDetalhe.remessa_id || '—'"></div>
+              </div>
+              <div class="bg-gray-50 rounded-lg p-3">
+                <div class="text-xs text-gray-400 mb-1">Resultado</div>
+                <div class="font-semibold text-gray-700" x-text="eventoDetalhe.resultado"></div>
+              </div>
+              <div class="bg-gray-50 rounded-lg p-3">
+                <div class="text-xs text-gray-400 mb-1">Origem</div>
+                <div class="font-semibold text-gray-700" x-text="eventoDetalhe.origem"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+    </div>
+  </div><!-- /modal evento -->
+
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       MODAL: DETALHE DO UPLOAD
+  ════════════════════════════════════════════════════════════════ -->
+  <div x-show="uploadDetalheModal" x-cloak
+       class="fixed inset-0 z-50 flex items-center justify-center"
+       @keydown.escape.window="fecharUploadDetalheModal()">
+    <div class="absolute inset-0 bg-black bg-opacity-40" @click="fecharUploadDetalheModal()"></div>
+    <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto mx-4">
+      <template x-if="uploadDetalhe">
+        <div>
+          <div class="bg-bd px-6 py-5 rounded-t-2xl flex items-start justify-between">
+            <div>
+              <div class="text-white font-bold text-lg leading-tight" x-text="uploadDetalhe.arquivo"></div>
+              <div class="text-blue-300 text-xs mt-1"
+                   x-text="(uploadDetalhe.cd || '—') + ' · ' + (uploadDetalhe.criado_em ? new Date(uploadDetalhe.criado_em).toLocaleString('pt-BR') : '—')"></div>
+            </div>
+            <button @click="fecharUploadDetalheModal()" class="text-blue-300 hover:text-white text-2xl leading-none mt-1">×</button>
+          </div>
+
+          <div class="p-6 space-y-5">
+            <div class="grid grid-cols-3 gap-3 text-sm">
+              <div class="bg-gray-50 rounded-xl p-4 text-center">
+                <div class="text-2xl font-black bd-blue" x-text="uploadDetalhe.total_remessas || 0"></div>
+                <div class="text-xs text-gray-400 mt-1">Remessas processadas</div>
+              </div>
+              <div class="bg-gray-50 rounded-xl p-4 text-center">
+                <div class="text-2xl font-black text-red-500" x-text="uploadDetalhe.linhas_erro || 0"></div>
+                <div class="text-xs text-gray-400 mt-1">Erros</div>
+              </div>
+              <div class="bg-gray-50 rounded-xl p-4 text-center">
+                <div class="text-2xl font-black text-amber-500" x-text="uploadDetalhe.linhas_dup || 0"></div>
+                <div class="text-xs text-gray-400 mt-1">Duplicatas</div>
+              </div>
+            </div>
+
+            <div>
+              <div class="text-sm font-semibold text-gray-700 mb-2">Remessas inseridas</div>
+              <div x-show="!uploadDetalhe.remessas || uploadDetalhe.remessas.length === 0"
+                   class="text-sm text-gray-400 bg-gray-50 rounded-lg px-4 py-3">
+                Nenhuma remessa associada a este upload.
+              </div>
+              <div class="max-h-72 overflow-y-auto divide-y divide-gray-50 border border-gray-100 rounded-lg">
+                <template x-for="r in (uploadDetalhe.remessas || [])" :key="r.id">
+                  <div class="flex items-center justify-between px-3 py-2 text-xs">
+                    <span class="font-mono font-semibold text-gray-700" x-text="r.numero"></span>
+                    <span class="text-gray-500 truncate max-w-[220px]" x-text="r.cliente"></span>
+                    <span class="px-1.5 py-0.5 rounded text-xs" :class="'status-'+r.status" x-text="r.status"></span>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+    </div>
+  </div><!-- /modal upload -->
+
+
+  <script>
+  // Injeta "Authorization: Bearer <token>" em toda chamada para /api/* e
+  // dispara um logout automático se o token expirar/for rejeitado (401) —
+  // evita telas presas sem dados depois que o JWT vence (8h).
+  (function() {
+    const _fetch = window.fetch.bind(window);
+    window.fetch = async (url, opts = {}) => {
+      const isApi = typeof url === 'string' && url.startsWith('/api/') && url !== '/api/auth/login';
+      if (isApi) {
+        const token = localStorage.getItem('peo_bd_token');
+        if (token) {
+          opts = { ...opts, headers: { ...(opts.headers || {}), Authorization: 'Bearer ' + token } };
+        }
+      }
+      const res = await _fetch(url, opts);
+      if (isApi && res.status === 401 && url !== '/api/auth/me') {
+        window.dispatchEvent(new CustomEvent('peo-bd:unauthorized'));
+      }
+      return res;
+    };
+  })();
+
+  function app() {
+    return {
+      page: 'dashboard',
+      token: null,
+      usuarioNome: '',
+      usuarioRole: '',
+      usuarioCd: null,
+      loginForm: { usuario: '', senha: '' },
+      loginErro: '',
+      loginCarregando: false,
+      perfilSelecionado: null,
+      cdFiltro: '',
+      dashboard: { remessas: {}, alertas: {} },
+      ondas: [],
+      alertas: [],
+      alertaFiltro: '',
+      remessas: [],
+      oportunidades: [],
+      oportunidadeExpandida: null,
+      uploading: false,
+      uploadResult: null,
+      exportandoPDF: false,
+      horaAtual: '',
+      dataHoje: '',
+      alertasCriticos: 0,
+      rastreioFiltro: { busca: '', status: '', transportadoraId: '' },
+      // Modal de alerta
+      alertaModal: false,
+      alertaDetalhe: null,
+      alertaHistorico: [],
+      alertaHistoricoCarregando: false,
+      // Modal de remessa
+      remessaModal: false,
+      remessaDetalhe: null,
+      remessaHistorico: [],
+      remessaHistoricoCarregando: false,
+      // Modal de evento de transportadora
+      eventoModal: false,
+      eventoDetalhe: null,
+      // Modal de detalhe de upload
+      uploadDetalheModal: false,
+      uploadDetalhe: null,
+      // Ondas do dia — painel expansível
+      ondaExpandidaDashboard: null,
+      remessasOndaDashboard: [],
+      remessasOndaDashboardCarregando: false,
+      // Último Erro Identificado
+      ultimosErros: [],
+      // Clientes
+      clientes: [],
+      clientesBusca: '',
+      clienteModal: false,
+      clienteDetalhe: null,
+      // Erros
+      erros: { totais: { duplicatas:0, em_aberto:0, sem_nf:0 }, duplicatas:[], em_aberto:[], sem_nf:[], ultimo_upload: null },
+      painelDiagnosticoAba: 'em_aberto',
+      // Assistente de Diagnóstico
+      chatAssistenteAberto: false,
+      chatContextoModo: 'geral',   // 'geral' (botão flutuante) | 'erro' (? Ajuda por tipo de erro)
+      chatAssistenteTipoErro: null,
+      chatMensagens: [],
+      chatInputAtual: '',
+      chatEnviando: false,
+      // Transportadoras
+      transportadoras: [],
+      cotacao: [],
+      transportadoraAberta: null,
+      // Contingência
+      modoContingencia: false,
+      reconectado: false,
+      sincronizando: false,
+      falhasConsecutivas: 0,
+      pendentesLocais: 0,
+      intervalPing: null,
+      resumoPlanilhaContingencia: null,
+      remessasLocais: [],
+      estatisticasTransp: [],
+      transpExpandida: null,
+      historicoTransp: [],
+      historicoCarregando: false,
+      metaEditando: null,
+      metaEditValor: null,
+      // Histórico de Ondas
+      historicoOndasPeriodo: 'hoje',
+      historicoOndasCd: '',
+      historicoOndas: [],
+      historicoOndasCarregando: false,
+      planoExpandidoHistorico: null,
+      ondaExpandidaHistorico: null,
+      remessasOndaHistorico: [],
+      remessasOndaCarregando: false,
+      fechamentoOndaAtiva: null,
+      fechamentoStatusPorRemessa: {},
+      fechandoOnda: false,
+
+      navItems: [
+        { id: 'dashboard',       icon: '📊', label: 'Dashboard',          title: 'Dashboard de Expedição' },
+        { id: 'upload',          icon: '📂', label: 'Novo Upload',         title: 'Upload de Arquivo' },
+        { id: 'clientes',        icon: '👥', label: 'Clientes',            title: 'Gestão de Clientes' },
+        { id: 'painel_diagnostico', icon: '⚠️', label: 'Painel de Diagnóstico', title: 'Painel de Diagnóstico: Duplicatas · Abertos · Sem NF' },
+        { id: 'rastreio',        icon: '🚚', label: 'Rastreio',            title: 'Rastreio Consolidado' },
+        { id: 'transportadoras', icon: '🚛', label: 'Transportadoras',     title: 'Transportadoras & Cotação de Rotas' },
+        { id: 'oportunidades',   icon: '💰', label: 'Oportunidades FTL',   title: 'Oportunidades de Consolidação FTL' },
+        { id: 'historico_ondas', icon: '📜', label: 'Histórico de Ondas',  title: 'Histórico de Ondas por Período' },
+        { id: 'contingencia',    icon: '🔌', label: 'Modo Offline',        title: 'Montagem Manual — Modo de Contingência' },
+      ],
+
+      statusList: [
+        ['novo',            'Novos',          'bg-violet-400'],
+        ['planejado',       'Planejados',      'bg-blue-400'],
+        ['coletado',        'Coletados',       'bg-yellow-400'],
+        ['em_transito',     'Em Trânsito',     'bg-orange-400'],
+        ['em_rota_entrega', 'Em Rota',         'bg-lime-400'],
+        ['entregue',        'Entregues',       'bg-green-500'],
+        ['tentativa',       'Tentativas',      'bg-red-400'],
+        ['devolvido',       'Devolvidos',      'bg-gray-400'],
+      ],
+
+      uploadForm: {
+        cd: 'OSA', usuario: 'timoteo', files: [], autoEnviar: true,
+      },
+
+      pipelineSteps: [
+        { label: 'Agente 1 — Ingestão',      desc: 'Lê arquivo, normaliza colunas, detecta duplicatas', done: false, running: false },
+        { label: 'Agente 2 — Classificação', desc: 'Aplica regras de negócio: ATA, NF, janelas, consolidação', done: false, running: false },
+        { label: 'Agente 3 — Montagem',      desc: 'Agrupa por região, aloca veículos, cria ondas', done: false, running: false },
+        { label: 'Agente 4 — Comunicação',   desc: 'Gera planilhas Excel e envia e-mails às transportadoras', done: false, running: false },
+        { label: 'Agente 5 — Monitor',       desc: 'Atualiza dashboard de rastreio em tempo real', done: false, running: false },
+      ],
+
+      otifChart: null,
+
+      _aplicarSessao(dados) {
+        this.token        = dados.token;
+        this.usuarioNome  = dados.nome;
+        this.usuarioRole  = dados.role;
+        this.usuarioCd    = dados.cd;
+        this.perfilSelecionado = dados.role === 'admin' ? 'master' : dados.cd;
+        this.cdFiltro     = this.perfilSelecionado === 'master' ? '' : (this.perfilSelecionado || '');
+      },
+
+      async fazerLogin() {
+        this.loginErro = '';
+        this.loginCarregando = true;
+        try {
+          const res = await fetch('/api/auth/login', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ usuario: this.loginForm.usuario, senha: this.loginForm.senha }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            this.loginErro = data.detail || 'Credenciais inválidas';
+            return;
+          }
+          localStorage.setItem('peo_bd_token', data.token);
+          this._aplicarSessao(data);
+          this.loginForm = { usuario: '', senha: '' };
+          await this.loadDashboard();
+          await this.loadRemessas();
+          await this.loadOportunidades();
+        } catch(e) {
+          console.error('login:', e);
+          this.loginErro = 'Erro ao conectar com o servidor.';
+        } finally {
+          this.loginCarregando = false;
+        }
+      },
+
+      logout() {
+        localStorage.removeItem('peo_bd_token');
+        this.token = null;
+        this.usuarioNome = '';
+        this.usuarioRole = '';
+        this.usuarioCd = null;
+        this.perfilSelecionado = null;
+        this.cdFiltro = '';
+        this.page = 'dashboard';
+      },
+
+      get otifPct() {
+        return this.dashboard.otif_pct || 0;
+      },
+
+      get totalRemessasHoje() {
+        const r = this.dashboard.remessas || {};
+        return (r.novo||0) + (r.planejado||0) + (r.coletado||0)
+             + (r.em_transito||0) + (r.em_rota_entrega||0) + (r.tentativa||0);
+      },
+
+      get totalEconomia() {
+        return this.oportunidades.reduce((a, op) => a + (op.economia_estimada || 0), 0);
+      },
+
+      get remessasFiltradas() {
+        return this.remessas.filter(r => {
+          const busca = this.rastreioFiltro.busca.toLowerCase();
+          const matchBusca = !busca ||
+            r.numero?.toLowerCase().includes(busca) ||
+            r.cliente?.toLowerCase().includes(busca) ||
+            r.cidade_uf?.toLowerCase().includes(busca);
+          const matchStatus = !this.rastreioFiltro.status || r.status === this.rastreioFiltro.status;
+          return matchBusca && matchStatus;
+        });
+      },
+
+      pct(val) {
+        const total = this.totalRemessasHoje || 1;
+        return Math.round((val / total) * 100);
+      },
+
+      async init() {
+        window.addEventListener('peo-bd:unauthorized', () => this.logout());
+
+        const tokenSalvo = localStorage.getItem('peo_bd_token');
+        if (tokenSalvo) {
+          try {
+            const res = await fetch('/api/auth/me', { headers: { Authorization: 'Bearer ' + tokenSalvo } });
+            if (res.ok) {
+              const me = await res.json();
+              this._aplicarSessao({ token: tokenSalvo, nome: me.nome, role: me.role, cd: me.cd });
+            } else {
+              localStorage.removeItem('peo_bd_token');
+            }
+          } catch(e) {
+            console.error('auth_me:', e);
+            localStorage.removeItem('peo_bd_token');
+          }
+        }
+
+        this.updateTime();
+        setInterval(() => this.updateTime(), 1000);
+        if (this.token) {
+          await this.loadDashboard();
+          await this.loadRemessas();
+          await this.loadOportunidades();
+        }
+        if (this._dashboardInterval) clearInterval(this._dashboardInterval);
+        this._dashboardInterval = setInterval(() => {
+          if (this.page === 'dashboard') this.loadDashboard();
+          if (this.page === 'painel_diagnostico') this.loadUltimosErros();
+        }, 15000);
+        this.$watch('page', (p) => {
+          if (p === 'rastreio')        { this.loadRemessas(); this.loadTransportadoras(); }
+          if (p === 'alertas')         this.loadAlertas();
+          if (p === 'oportunidades')   this.loadOportunidades();
+          if (p === 'dashboard')       { this.loadDashboard(); this.loadOndas(); }
+          if (p === 'clientes')        this.loadClientes();
+          if (p === 'painel_diagnostico')           { this.loadPainelDiagnostico(); this.loadUltimosErros(); }
+          if (p === 'transportadoras') { this.loadTransportadoras(); this.loadCotacao(); this.loadEstatisticasTransp(); }
+          if (p === 'historico_ondas') this.loadHistoricoOndas();
+        });
+        this.iniciarMonitoramentoConexao();
+      },
+
+      updateTime() {
+        const now = new Date();
+        this.horaAtual = now.toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' });
+        this.dataHoje  = now.toLocaleDateString('pt-BR', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
+      },
+
+      async loadDashboard() {
+        if (!this.token) return;
+        try {
+          const params = this.cdFiltro ? `?cd_codigo=${this.cdFiltro}` : '';
+          const res = await fetch(`/api/dashboard${params}`);
+          this.dashboard = await res.json();
+          this.alertasCriticos = this.dashboard.alertas?.critica || 0;
+          this.$nextTick(() => this.renderOtifChart());
+          await this.loadOndas();
+        } catch(e) { console.error('dashboard:', e); }
+      },
+
+      async loadOndas() {
+        try {
+          const params = this.cdFiltro ? `?cd_codigo=${this.cdFiltro}` : '';
+          const res = await fetch(`/api/ondas-hoje${params}`);
+          this.ondas = await res.json();
+        } catch(e) { console.error('ondas:', e); }
+      },
+
+      async loadAlertas() {
+        try {
+          const params = this.alertaFiltro ? `?severidade=${this.alertaFiltro}` : '';
+          const res = await fetch(`/api/alertas${params}`);
+          this.alertas = await res.json();
+        } catch(e) { console.error('alertas:', e); }
+      },
+
+      async loadRemessas() {
+        try {
+          const params = new URLSearchParams({ limit: 200 });
+          if (this.rastreioFiltro.status)                    params.set('status', this.rastreioFiltro.status);
+          if (this.rastreioFiltro.transportadoraId !== '')    params.set('transportadora_id', this.rastreioFiltro.transportadoraId);
+          const res = await fetch(`/api/remessas?${params}`);
+          this.remessas = await res.json();
+        } catch(e) { console.error('remessas:', e); }
+      },
+
+      async loadOportunidades() {
+        try {
+          const res = await fetch('/api/oportunidades');
+          this.oportunidades = await res.json();
+        } catch(e) { console.error('oportunidades:', e); }
+      },
+
+      async resolverAlerta(id) {
+        try {
+          const res = await fetch(`/api/alertas/${id}/resolver`, { method: 'POST' });
+          if (!res.ok) throw new Error('Falha ao resolver alerta');
+          this.alertas = this.alertas.filter(a => a.id !== id);
+          if (this.alertaModal && this.alertaDetalhe?.id === id) this.fecharAlertaModal();
+          this.loadDashboard();
+        } catch(e) { console.error('resolver:', e); }
+      },
+
+      // ── Modal: Alerta ────────────────────────────────────────────────────
+      async abrirAlerta(alerta) {
+        this.alertaDetalhe = alerta;
+        this.alertaModal = true;
+        this.alertaHistorico = [];
+        if (!alerta.remessa_id) return;
+        this.alertaHistoricoCarregando = true;
+        try {
+          const res = await fetch(`/api/historico?remessa_id=${alerta.remessa_id}&limit=20`);
+          this.alertaHistorico = await res.json();
+        } catch(e) { console.error('historico_alerta:', e); }
+        this.alertaHistoricoCarregando = false;
+      },
+
+      fecharAlertaModal() {
+        this.alertaModal = false;
+        this.alertaDetalhe = null;
+        this.alertaHistorico = [];
+      },
+
+      // ── Modal: Remessa ───────────────────────────────────────────────────
+      async abrirRemessa(remessa) {
+        this.remessaDetalhe = remessa;
+        this.remessaModal = true;
+        this.remessaHistorico = [];
+        this.remessaHistoricoCarregando = true;
+        try {
+          const res = await fetch(`/api/historico?remessa_id=${remessa.id}&limit=30`);
+          this.remessaHistorico = await res.json();
+        } catch(e) { console.error('historico_remessa:', e); }
+        this.remessaHistoricoCarregando = false;
+      },
+
+      fecharRemessaModal() {
+        this.remessaModal = false;
+        this.remessaDetalhe = null;
+        this.remessaHistorico = [];
+      },
+
+      // ── Modal: Evento de transportadora ─────────────────────────────────
+      abrirEvento(evento) {
+        this.eventoDetalhe = evento;
+        this.eventoModal = true;
+      },
+
+      fecharEventoModal() {
+        this.eventoModal = false;
+        this.eventoDetalhe = null;
+      },
+
+      // ── Modal: Detalhe de upload ─────────────────────────────────────────
+      async abrirUploadDetalhe() {
+        const id = this.erros.ultimo_upload?.id;
+        if (!id) return;
+        try {
+          const res = await fetch(`/api/uploads/${id}`);
+          if (!res.ok) throw new Error('Falha ao buscar detalhe do upload');
+          this.uploadDetalhe = await res.json();
+          this.uploadDetalheModal = true;
+        } catch(e) { console.error('upload_detalhe:', e); }
+      },
+
+      fecharUploadDetalheModal() {
+        this.uploadDetalheModal = false;
+        this.uploadDetalhe = null;
+      },
+
+      // ── Último Erro Identificado ─────────────────────────────────────────
+      async loadUltimosErros() {
+        try {
+          const res = await fetch('/api/historico?tipo_evento=erro_sistema&limit=5');
+          this.ultimosErros = await res.json();
+        } catch(e) { console.error('ultimos_erros:', e); }
+      },
+
+      badgeGravidade(gravidade) {
+        if (gravidade === 'critico') return { bg: 'bg-red-100',   text: 'text-red-700'   };
+        if (gravidade === 'alerta')  return { bg: 'bg-amber-100', text: 'text-amber-700' };
+        return                             { bg: 'bg-blue-100',  text: 'text-blue-700'  };
+      },
+
+      // ── Ondas do Dia — painel expansível ─────────────────────────────────
+      async toggleOndaDashboard(ondaId) {
+        if (this.ondaExpandidaDashboard === ondaId) {
+          this.ondaExpandidaDashboard = null;
+          this.remessasOndaDashboard = [];
+          return;
+        }
+        this.ondaExpandidaDashboard = ondaId;
+        this.remessasOndaDashboardCarregando = true;
+        this.remessasOndaDashboard = [];
+        try {
+          const res = await fetch(`/api/ondas/${ondaId}/remessas`);
+          const data = await res.json();
+          this.remessasOndaDashboard = data.remessas || [];
+        } catch(e) { console.error('remessas_onda_dashboard:', e); }
+        this.remessasOndaDashboardCarregando = false;
+      },
+
+      renderOtifChart() {
+        const canvas = document.getElementById('otifChart');
+        if (!canvas || !document.body.contains(canvas)) return;
+
+        const val  = this.otifPct;
+        const rest = Math.max(0, 100 - val);
+        const color = val >= 95 ? '#00A650' : val >= 85 ? '#F59E0B' : '#EF4444';
+
+        // Reaproveita a instância existente (update em vez de destroy+new a
+        // cada refresh de 15s) — evita corrida entre o loop de animação do
+        // Chart.js e uma instância já destruída, que causava getContext(null).
+        // O try/catch cobre uma corrida secundária do próprio Chart.js: se
+        // update() for chamado antes do setup interno do plugin de legenda
+        // terminar (ex.: duas chamadas quase simultâneas logo no load inicial),
+        // ele lança "Cannot set properties of undefined (setting 'fullSize')" —
+        // inofensivo, a próxima atualização (15s depois) corrige o desenho.
+        if (this.otifChart) {
+          try {
+            this.otifChart.data.datasets[0].data = [val, rest];
+            this.otifChart.data.datasets[0].backgroundColor = [color, '#F3F4F6'];
+            this.otifChart.update();
+          } catch (e) {
+            console.warn('[PEO-BD] Atualização do gráfico OTIF ignorada (corrida interna do Chart.js):', e);
+          }
+          return;
+        }
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        this.otifChart = new Chart(ctx, {
+          type: 'doughnut',
+          data: {
+            datasets: [{
+              data: [val, rest],
+              backgroundColor: [color, '#F3F4F6'],
+              borderWidth: 0,
+              borderRadius: 4,
+            }]
+          },
+          options: {
+            cutout: '75%',
+            plugins: { legend: { display: false }, tooltip: { enabled: false } },
+            responsive: true,
+            maintainAspectRatio: true,
+          }
+        });
+      },
+
+      handleDrop(e) {
+        e.currentTarget.classList.remove('dragover');
+        const novos = Array.from(e.dataTransfer.files).filter(f =>
+          /\.(xlsx|xls|csv)$/i.test(f.name)
+        );
+        // Acumula arquivos (sem duplicar pelo nome)
+        const existentes = new Set(this.uploadForm.files.map(f => f.name));
+        novos.forEach(f => { if (!existentes.has(f.name)) this.uploadForm.files.push(f); });
+      },
+
+      async enviarUpload() {
+        if (this.uploadForm.files.length === 0) return;
+        this.uploading = true;
+        this.uploadResult = null;
+        this.pipelineSteps.forEach(s => { s.done = false; s.running = false; });
+
+        let stepIdx = 0;
+        const animInterval = setInterval(() => {
+          if (stepIdx < this.pipelineSteps.length) {
+            if (stepIdx > 0) {
+              this.pipelineSteps[stepIdx - 1].running = false;
+              this.pipelineSteps[stepIdx - 1].done    = true;
+            }
+            this.pipelineSteps[stepIdx].running = true;
+            stepIdx++;
+          }
+        }, 900);
+
+        try {
+          // Envia cada arquivo individualmente detectando CD pelo nome do arquivo
+          const resultados = [];
+          let okCount = 0;
+          for (const arquivo of this.uploadForm.files) {
+            const fd      = new FormData();
+            const cd      = this._detectarCD(arquivo.name);
+            const usuario = this._detectarUsuario(cd);
+            fd.append('arquivo',     arquivo);
+            fd.append('cd_codigo',   cd);
+            fd.append('usuario',     usuario);
+            fd.append('auto_enviar', this.uploadForm.autoEnviar ? 'true' : 'false');
+            const res = await fetch('/api/upload', { method: 'POST', body: fd });
+            const r   = await res.json();
+            resultados.push(r);
+            if (r.status === 'concluido') okCount++;
+          }
+          if (resultados.length === 1) {
+            this.uploadResult = resultados[0];
+          } else {
+            this.uploadResult = {
+              status:     okCount === resultados.length ? 'concluido' : 'parcial',
+              total:      resultados.length,
+              ok:         okCount,
+              resultados,
+            };
+          }
+
+          clearInterval(animInterval);
+          this.pipelineSteps.forEach(s => { s.running = false; s.done = true; });
+          await new Promise(r => setTimeout(r, 800));
+          await this.loadDashboard();
+
+        } catch(e) {
+          clearInterval(animInterval);
+          console.error('upload:', e);
+        } finally {
+          this.uploading = false;
+        }
+      },
+
+      _detectarCD(filename) {
+        const f = filename.toUpperCase();
+        if (f.includes('ITJ') || f.includes('UPS')) return 'ITJ';
+        return 'OSA';
+      },
+
+      _detectarUsuario(cd) {
+        return cd === 'ITJ' ? 'carlos' : 'timoteo';
+      },
+
+      resetUpload() {
+        this.uploadResult = null;
+        this.uploadForm.files = [];
+        this.pipelineSteps.forEach(s => { s.done = false; s.running = false; });
+      },
+
+      async exportarPDF() {
+        this.exportandoPDF = true;
+        try {
+          const params = this.cdFiltro ? `?cd_codigo=${this.cdFiltro}` : '';
+          const res = await fetch(`/api/relatorio/pdf${params}`);
+          if (!res.ok) throw new Error('Erro ao gerar PDF');
+          const blob = await res.blob();
+          const url  = URL.createObjectURL(blob);
+          const a    = document.createElement('a');
+          a.href     = url;
+          a.download = `relatorio_peo_bd_${new Date().toISOString().slice(0,10)}.pdf`;
+          a.click();
+          URL.revokeObjectURL(url);
+        } catch(e) {
+          console.error('exportarPDF:', e);
+          alert('Não foi possível gerar o PDF. Verifique se o servidor está rodando.');
+        } finally {
+          this.exportandoPDF = false;
+        }
+      },
+
+      // ── Clientes ──────────────────────────────────────────────────────────
+      async loadClientes() {
+        try {
+          const params = this.clientesBusca ? `?busca=${encodeURIComponent(this.clientesBusca)}` : '';
+          const res = await fetch(`/api/clientes${params}`);
+          this.clientes = await res.json();
+        } catch(e) { console.error('clientes:', e); }
+      },
+
+      async abrirCliente(id) {
+        try {
+          const res = await fetch(`/api/clientes/${id}`);
+          this.clienteDetalhe = await res.json();
+          this.clienteModal = true;
+        } catch(e) { console.error('cliente detalhe:', e); }
+      },
+
+      fecharCliente() {
+        this.clienteModal = false;
+        this.clienteDetalhe = null;
+      },
+
+      get clientesFiltrados() {
+        const b = this.clientesBusca.toLowerCase();
+        if (!b) return this.clientes;
+        return this.clientes.filter(c =>
+          c.razao_social?.toLowerCase().includes(b) ||
+          c.cidade?.toLowerCase().includes(b) ||
+          c.tipo?.toLowerCase().includes(b)
+        );
+      },
+
+      // ── Erros ─────────────────────────────────────────────────────────────
+      async loadPainelDiagnostico() {
+        try {
+          const params = this.cdFiltro ? `?cd_codigo=${this.cdFiltro}` : '';
+          const res = await fetch(`/api/erros-upload${params}`);
+          this.erros = await res.json();
+        } catch(e) { console.error('erros:', e); }
+      },
+
+      // ── Assistente de Diagnóstico ─────────────────────────────────────────
+      abrirAssistenteGeral() {
+        // Reabre a mesma conversa em andamento (não perde o histórico da sessão);
+        // só inicia uma nova se ainda não havia conversa geral aberta.
+        if (this.chatContextoModo !== 'geral' || this.chatMensagens.length === 0) {
+          this.chatContextoModo = 'geral';
+          this.chatAssistenteTipoErro = null;
+          this.chatMensagens = [{
+            role: 'assistant',
+            content: 'Olá! Sou o assistente de diagnóstico do PEO-BD. Posso te ajudar com dúvidas sobre remessas, alertas e erros do sistema. O que você gostaria de saber?',
+            local: true,
+          }];
+          this.chatInputAtual = '';
+        }
+        this.chatAssistenteAberto = true;
+      },
+
+      fecharChatAssistente() {
+        // Fecha sem apagar o histórico da sessão — reabrir retoma a conversa.
+        this.chatAssistenteAberto = false;
+      },
+
+      async enviarMensagemChat() {
+        const mensagem = this.chatInputAtual.trim();
+        if (!mensagem || this.chatEnviando) return;
+
+        const historicoParaEnvio = this.chatMensagens
+          .filter(m => !m.local)
+          .map(m => ({ role: m.role, content: m.content }));
+
+        this.chatMensagens.push({ role: 'user', content: mensagem });
+        this.chatInputAtual = '';
+        this.chatEnviando = true;
+
+        try {
+          const res = await fetch('/api/assistente/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              tipo_erro:          this.chatContextoModo === 'erro' ? this.chatAssistenteTipoErro.codigo : null,
+              historico_conversa: historicoParaEnvio,
+              mensagem_atual:     mensagem,
+            }),
+          });
+          if (!res.ok) {
+            const erro = await res.json().catch(() => ({}));
+            throw new Error(erro.detail || 'Falha ao consultar o assistente');
+          }
+          const data = await res.json();
+          this.chatMensagens.push({ role: 'assistant', content: data.resposta });
+        } catch (e) {
+          console.error('chat_assistente:', e);
+          this.chatMensagens.push({ role: 'assistant', content: '⚠ ' + e.message, erro: true });
+        } finally {
+          this.chatEnviando = false;
+        }
+      },
+
+      // ── Transportadoras ───────────────────────────────────────────────────
+      async loadTransportadoras() {
+        try {
+          const res = await fetch('/api/transportadoras');
+          this.transportadoras = await res.json();
+        } catch(e) { console.error('transportadoras:', e); }
+      },
+
+      async loadCotacao() {
+        try {
+          const params = this.cdFiltro ? `?cd_codigo=${this.cdFiltro}` : '';
+          const res = await fetch(`/api/transportadoras/cotacao${params}`);
+          this.cotacao = await res.json();
+        } catch(e) { console.error('cotacao:', e); }
+      },
+
+      async loadEstatisticasTransp() {
+        try {
+          const res = await fetch('/api/transportadoras/estatisticas');
+          this.estatisticasTransp = await res.json();
+        } catch(e) { console.error('estatisticas_transp:', e); }
+      },
+
+      async loadHistoricoTransp(id) {
+        if (this.transpExpandida === id) {
+          this.transpExpandida = null;
+          this.historicoTransp = [];
+          return;
+        }
+        this.transpExpandida = id;
+        this.historicoCarregando = true;
+        this.historicoTransp = [];
+        try {
+          const res = await fetch(`/api/historico?transportadora_id=${id}&limit=10`);
+          this.historicoTransp = await res.json();
+        } catch(e) { console.error('historico_transp:', e); }
+        this.historicoCarregando = false;
+      },
+
+      indicadorTransp(taxa) {
+        if (taxa < 5)  return { bg: 'bg-green-100',  text: 'text-green-700',  label: 'OK'       };
+        if (taxa < 15) return { bg: 'bg-yellow-100', text: 'text-yellow-700', label: 'Atenção'  };
+        return           { bg: 'bg-red-100',    text: 'text-red-700',    label: 'Crítico'  };
+      },
+
+      editarMetaOtif(t) {
+        this.metaEditando = t.id;
+        this.metaEditValor = t.meta_otif;
+      },
+
+      async salvarMetaOtif(t) {
+        const valor = Number(this.metaEditValor);
+        if (!(valor > 0 && valor <= 100)) {
+          alert('A meta de OTIF deve estar entre 0 e 100.');
+          return;
+        }
+        try {
+          const res = await fetch(`/api/transportadoras/${t.id}/meta-otif`, {
+            method:  'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ meta_otif: valor }),
+          });
+          if (!res.ok) throw new Error('Falha ao salvar meta de OTIF');
+          const data = await res.json();
+          t.meta_otif   = data.meta_otif;
+          t.abaixo_meta = t.otif_atual !== null && t.otif_atual < t.meta_otif;
+          t.desvio      = t.otif_atual !== null ? +(t.otif_atual - t.meta_otif).toFixed(1) : null;
+        } catch(e) {
+          console.error('salvar_meta_otif:', e);
+          alert('Erro ao salvar a meta de OTIF.');
+        } finally {
+          this.metaEditando = null;
+        }
+      },
+
+      // ── Histórico de Ondas ────────────────────────────────────────────────
+      async loadHistoricoOndas() {
+        this.historicoOndasCarregando = true;
+        try {
+          const params = new URLSearchParams({ periodo: this.historicoOndasPeriodo });
+          if (this.historicoOndasCd) params.set('cd_codigo', this.historicoOndasCd);
+          const res = await fetch(`/api/ondas/historico?${params}`);
+          this.historicoOndas = await res.json();
+        } catch(e) { console.error('historico_ondas:', e); }
+        this.historicoOndasCarregando = false;
+      },
+
+      togglePlanoHistorico(planoId) {
+        this.planoExpandidoHistorico = this.planoExpandidoHistorico === planoId ? null : planoId;
+      },
+
+      async toggleOndaHistorico(ondaId) {
+        if (this.ondaExpandidaHistorico === ondaId) {
+          this.ondaExpandidaHistorico = null;
+          this.remessasOndaHistorico = [];
+          this.fechamentoOndaAtiva = null;
+          return;
+        }
+        this.ondaExpandidaHistorico = ondaId;
+        this.fechamentoOndaAtiva = null;
+        this.remessasOndaCarregando = true;
+        this.remessasOndaHistorico = [];
+        try {
+          const res = await fetch(`/api/ondas/${ondaId}/remessas`);
+          const data = await res.json();
+          this.remessasOndaHistorico = data.remessas || [];
+        } catch(e) { console.error('remessas_onda:', e); }
+        this.remessasOndaCarregando = false;
+      },
+
+      async registrarRetornoOnda(ondaId) {
+        // Garante a onda expandida (com remessas carregadas) sem alternar
+        // o estado caso o usuário já a tenha aberto para leitura antes.
+        if (this.ondaExpandidaHistorico !== ondaId) {
+          await this.toggleOndaHistorico(ondaId);
+        }
+        this.fechamentoOndaAtiva = ondaId;
+        const STATUS_FECHAMENTO = ['entregue', 'tentativa', 'devolvido'];
+        this.fechamentoStatusPorRemessa = {};
+        this.remessasOndaHistorico.forEach(r => {
+          this.fechamentoStatusPorRemessa[r.id] = STATUS_FECHAMENTO.includes(r.status) ? r.status : 'entregue';
+        });
+      },
+
+      cancelarFechamentoOnda() {
+        this.fechamentoOndaAtiva = null;
+        this.fechamentoStatusPorRemessa = {};
+      },
+
+      async confirmarFechamentoOnda(ondaId) {
+        this.fechandoOnda = true;
+        try {
+          const resultados = Object.entries(this.fechamentoStatusPorRemessa).map(([remessa_id, status]) => ({
+            remessa_id: parseInt(remessa_id, 10), status,
+          }));
+          const usuario = this.historicoOndasCd === 'ITJ' ? 'carlos' : 'timoteo';
+          const res = await fetch(`/api/ondas/${ondaId}/fechar`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ resultados, usuario }),
+          });
+          if (!res.ok) {
+            const erro = await res.json().catch(() => ({}));
+            throw new Error(erro.detail || 'Falha ao fechar onda');
+          }
+          this.fechamentoOndaAtiva = null;
+          this.fechamentoStatusPorRemessa = {};
+          await this.toggleOndaHistorico(ondaId); // fecha
+          await this.toggleOndaHistorico(ondaId); // reabre já atualizada
+          await this.loadHistoricoOndas();
+          await this.loadDashboard();
+        } catch(e) {
+          console.error('fechar_onda:', e);
+          alert('Não foi possível registrar o fechamento: ' + e.message);
+        } finally {
+          this.fechandoOnda = false;
+        }
+      },
+
+      badgeStatusGeral(status) {
+        if (status === 'fechado') return { bg: 'bg-green-100',  text: 'text-green-700',  label: 'Fechado'  };
+        if (status === 'parcial') return { bg: 'bg-amber-100',  text: 'text-amber-700',  label: 'Parcial'  };
+        return                           { bg: 'bg-blue-100',   text: 'text-blue-700',   label: 'Aberto'   };
+      },
+
+      regiaoLabel(r) {
+        const m = { capital_sp:'Capital SP', interior_sp:'Interior SP', sul:'Sul (SC)', nao_mapeada:'Não mapeada' };
+        return m[r] || r;
+      },
+
+      // ── Modo de Contingência ─────────────────────────────────────────────────
+
+      iniciarMonitoramentoConexao() {
+        // Garante que o IndexedDB seja inicializado mesmo antes de qualquer falha.
+        abrirDB().catch(e => console.warn('IndexedDB: falha ao inicializar:', e));
+
+        if (this.intervalPing) clearInterval(this.intervalPing);
+        this.intervalPing = setInterval(async () => {
+          try {
+            const res = await fetch('/api/ping', { signal: AbortSignal.timeout(5000) });
+            if (res.ok) {
+              if (this.modoContingencia) {
+                await this.sairDaContingencia();
+              }
+              this.falhasConsecutivas = 0;
+            } else {
+              this.falhasConsecutivas++;
+            }
+          } catch (e) {
+            this.falhasConsecutivas++;
+          }
+
+          if (this.falhasConsecutivas >= 3 && !this.modoContingencia) {
+            this.entrarEmContingencia();
+          }
+        }, 15000);
+      },
+
+      entrarEmContingencia() {
+        this.modoContingencia = true;
+        console.warn('[PEO-BD] Sistema entrou em Modo de Contingência após', this.falhasConsecutivas, 'falhas consecutivas.');
+        contarPendentes().then(p => { this.pendentesLocais = p.total; }).catch(() => {});
+      },
+
+      async sairDaContingencia() {
+        this.reconectado = true;
+        console.info('[PEO-BD] Conexão restabelecida. Iniciando sincronização de dados locais.');
+
+        // Item 23 — sincronização real via /api/remessas/manual
+        await this.sincronizarDadosLocais();
+
+        this.modoContingencia = false;
+
+        // Oculta banner de reconexão após 4 segundos
+        setTimeout(() => { this.reconectado = false; }, 4000);
+
+        // Recarrega painel com dados frescos do servidor
+        await this.loadDashboard();
+      },
+
+      async sincronizarDadosLocais() {
+        const pendentes = await listarRemessasLocaisNaoSincronizadas();
+
+        if (pendentes.length === 0) {
+          this.pendentesLocais = 0;
+          return;
+        }
+
+        this.sincronizando = true;
+        console.info('[PEO-BD] Sincronizando', pendentes.length, 'remessa(s) local(is)...');
+        let sincronizados = 0;
+
+        for (const remessa of pendentes) {
+          try {
+            const res = await fetch('/api/remessas/manual', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                numero_remessa:      remessa.numero,
+                cliente_nome:        remessa.cliente,
+                cidade:              remessa.cidade,
+                volume_m3:           remessa.volume,
+                peso_kg:             remessa.peso,
+                transportadora_nome: remessa.transportadora,
+                origem_contingencia: true,
+              }),
+            });
+            if (res.ok) {
+              await marcarComoSincronizado(remessa.id_local, 'remessas_locais');
+              sincronizados++;
+            } else {
+              console.warn('[PEO-BD] Remessa', remessa.id_local, 'rejeitada pelo backend:', res.status);
+            }
+          } catch (e) {
+            console.error('[PEO-BD] Falha ao sincronizar remessa', remessa.id_local, e);
+          }
+        }
+
+        await limparDadosSincronizados();
+        this.sincronizando = false;
+        this.pendentesLocais = pendentes.length - sincronizados;
+        await this.carregarRemessasLocais();
+        console.info('[PEO-BD]', sincronizados, '/', pendentes.length, 'remessa(s) sincronizadas.');
+      },
+
+      // ── Operações de contingência ────────────────────────────────────────────
+
+      async carregarRemessasLocais() {
+        try {
+          this.remessasLocais = await listarRemessasLocaisNaoSincronizadas();
+          this.pendentesLocais = this.remessasLocais.length;
+        } catch (e) {
+          console.error('[PEO-BD] Falha ao carregar remessas locais:', e);
+        }
+      },
+
+      handleDropContingencia(e) {
+        const file = e.dataTransfer.files[0];
+        if (file) this.processarPlanilhaLocal(file);
+      },
+
+      async processarPlanilhaLocal(file) {
+        if (!file) return;
+        if (!window.XLSX) {
+          alert('Biblioteca de planilhas (SheetJS) não carregada. Verifique a conexão com o CDN.');
+          return;
+        }
+        try {
+          const buffer = await file.arrayBuffer();
+          const wb = XLSX.read(buffer, { type: 'array' });
+          const ws = wb.Sheets[wb.SheetNames[0]];
+          const linhas = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+          if (linhas.length === 0) {
+            alert('Planilha vazia ou sem linhas de dados.');
+            return;
+          }
+
+          const headers = Object.keys(linhas[0]);
+          const isSAP = headers.includes('Remessa');
+          const isUPS = headers.includes('ID_UPS');
+          if (!isSAP && !isUPS) {
+            alert('Formato não reconhecido. A planilha precisa ter a coluna "Remessa" (SAP) ou "ID_UPS" (UPS WMS).');
+            return;
+          }
+
+          const remessas = linhas.map(row => {
+            if (isSAP) return {
+              numero:         String(row['Remessa']  || '').trim(),
+              cliente:        String(row['Cliente']   || '').trim(),
+              cidade:         String(row['Cidade']    || '').trim(),
+              volume:         parseFloat(row['Vol (m³)']) || 0,
+              peso:           parseFloat(row['Peso (kg)']) || 0,
+              valor_nf:       parseFloat(row['Valor NF']) || 0,
+              transportadora: '',
+              status:         'novo',
+              origem:         'manual_contingencia',
+            };
+            return {
+              numero:         String(row['ID_UPS']       || '').trim(),
+              cliente:        String(row['Destinatário'] || '').trim(),
+              cidade:         String(row['UF']           || '').trim(),
+              volume:         parseFloat(row['Volume (m³)']) || 0,
+              peso:           parseFloat(row['Peso']) || 0,
+              valor_nf:       parseFloat(row['Valor NF']) || 0,
+              transportadora: '',
+              status:         'novo',
+              origem:         'manual_contingencia',
+            };
+          }).filter(r => r.numero);
+
+          if (remessas.length === 0) {
+            alert('Nenhuma remessa válida encontrada (número de remessa vazio em todas as linhas).');
+            return;
+          }
+
+          for (const remessa of remessas) {
+            await salvarRemessaLocal(remessa);
+          }
+          await this.carregarRemessasLocais();
+          this.resumoPlanilhaContingencia = { arquivo: file.name, total: remessas.length };
+        } catch (e) {
+          console.error('[PEO-BD] Falha ao processar planilha offline:', e);
+          alert('Não foi possível ler a planilha: ' + e.message);
+        }
+      },
+
+      gerarPdfContingencia() {
+        if (!window.jspdf) { alert('jsPDF não carregado. Verifique a conexão com o CDN.'); return; }
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF();
+
+        doc.setFontSize(16);
+        doc.text('PEO-BD — Onda de Contingência (Manual)', 14, 20);
+
+        doc.setFontSize(10);
+        doc.setTextColor(100);
+        doc.text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`, 14, 28);
+        doc.text('⚠ Documento gerado em modo offline — sincronizar assim que possível', 14, 34);
+
+        doc.setTextColor(0);
+        doc.setFontSize(9);
+
+        // Cabeçalho da tabela
+        let y = 46;
+        const cols = ['#', 'Remessa', 'Cliente', 'Cidade', 'Volume', 'Peso', 'Transportadora'];
+        const widths = [8, 28, 48, 30, 18, 18, 40];
+        let x = 14;
+        doc.setFillColor(240, 240, 240);
+        doc.rect(14, y - 4, 182, 7, 'F');
+        doc.setFont(undefined, 'bold');
+        cols.forEach((c, i) => { doc.text(c, x, y); x += widths[i]; });
+        doc.setFont(undefined, 'normal');
+        y += 7;
+
+        this.remessasLocais.forEach((r, i) => {
+          if (y > 270) { doc.addPage(); y = 20; }
+          x = 14;
+          const row = [
+            String(i + 1),
+            r.numero || '',
+            r.cliente || '',
+            r.cidade || '',
+            (r.volume || 0) + ' m³',
+            (r.peso || 0) + ' kg',
+            r.transportadora || '',
+          ];
+          row.forEach((v, j) => {
+            const max = widths[j] - 2;
+            const txt = doc.splitTextToSize(v, max);
+            doc.text(txt[0], x, y);
+            x += widths[j];
+          });
+          if (i % 2 === 0) {
+            doc.setFillColor(255, 251, 235);
+            doc.rect(14, y - 4.5, 182, 6.5, 'F');
+            x = 14;
+            row.forEach((v, j) => {
+              doc.text(doc.splitTextToSize(v, widths[j] - 2)[0], x, y);
+              x += widths[j];
+            });
+          }
+          y += 7;
+        });
+
+        // Rodapé
+        doc.setFontSize(8);
+        doc.setTextColor(150);
+        doc.text(`Total: ${this.remessasLocais.length} remessa(s) — PEO-BD Modo Contingência`, 14, 285);
+
+        doc.save(`onda_contingencia_${Date.now()}.pdf`);
+      },
+
+    };
+  }
+  </script>
+</body>
+</html>

@@ -44,8 +44,14 @@
       0%, 100% { opacity: 1; }
       50%       { opacity: 0.3; }
     }
+    .progress-bar-container {
+      overflow: hidden;
+      max-width: 100%;
+    }
     .progress-bar {
       transition: width 1.5s ease-in-out;
+      max-width: 100%;
+      width: clamp(0%, var(--progress, 0%), 100%);
     }
     .card-hover { transition: transform .15s, box-shadow .15s; }
     .card-hover:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,88,152,.12); }
@@ -257,36 +263,50 @@
         <div x-show="page==='dashboard'" class="p-6 space-y-6">
 
           <!-- KPI Cards -->
-          <div class="grid grid-cols-5 gap-4">
-            <div class="kpi-card bg-white rounded-xl p-4 shadow-sm border border-gray-100 card-hover cursor-pointer"
-                 @click="page='rastreio'; rastreioFiltro.status=''; loadRemessas()">
+          <div class="grid grid-cols-7 gap-3">
+            <div class="kpi-card bg-white rounded-xl p-3 shadow-sm border border-gray-100 card-hover cursor-pointer"
+                 @click="page='rastreio'; rastreioFiltro.status=''; rastreioFiltro.semOnda=false; rastreioFiltro.nfEmitida=null; loadRemessas()">
               <div class="text-xs text-gray-500 uppercase tracking-wide mb-1">Total Hoje</div>
               <div class="text-3xl font-black bd-blue" x-text="totalRemessasHoje"></div>
               <div class="text-xs text-gray-400 mt-1">remessas ativas</div>
             </div>
-            <div class="kpi-card bg-white rounded-xl p-4 shadow-sm border border-gray-100 card-hover cursor-pointer"
-                 @click="page='rastreio'; rastreioFiltro.status='em_rota_entrega'; loadRemessas()">
+            <div class="kpi-card bg-white rounded-xl p-3 shadow-sm border border-gray-100 card-hover cursor-pointer"
+                 @click="page='rastreio'; rastreioFiltro.status='em_rota_entrega'; rastreioFiltro.semOnda=false; rastreioFiltro.nfEmitida=null; loadRemessas()">
               <div class="text-xs text-gray-500 uppercase tracking-wide mb-1">Em Rota</div>
               <div class="text-3xl font-black text-amber-500" x-text="(dashboard.remessas?.em_rota_entrega || 0) + (dashboard.remessas?.em_transito || 0)"></div>
               <div class="text-xs text-gray-400 mt-1">em trânsito</div>
             </div>
-            <div class="kpi-card bg-white rounded-xl p-4 shadow-sm border border-gray-100 card-hover cursor-pointer"
-                 @click="page='rastreio'; rastreioFiltro.status='entregue'; loadRemessas()">
+            <div class="kpi-card bg-white rounded-xl p-3 shadow-sm border border-gray-100 card-hover cursor-pointer"
+                 @click="page='rastreio'; rastreioFiltro.status='entregue'; rastreioFiltro.semOnda=false; rastreioFiltro.nfEmitida=null; loadRemessas()">
               <div class="text-xs text-gray-500 uppercase tracking-wide mb-1">Entregues</div>
               <div class="text-3xl font-black text-green-600" x-text="dashboard.remessas?.entregue || 0"></div>
               <div class="text-xs text-gray-400 mt-1">confirmadas</div>
             </div>
-            <div class="kpi-card bg-white rounded-xl p-4 shadow-sm border border-gray-100 card-hover cursor-pointer"
-                 @click="page='rastreio'; rastreioFiltro.status='tentativa'; loadRemessas()">
+            <div class="kpi-card bg-white rounded-xl p-3 shadow-sm border border-gray-100 card-hover cursor-pointer"
+                 @click="page='rastreio'; rastreioFiltro.status='tentativa'; rastreioFiltro.semOnda=false; rastreioFiltro.nfEmitida=null; loadRemessas()">
               <div class="text-xs text-gray-500 uppercase tracking-wide mb-1">Tentativas</div>
               <div class="text-3xl font-black text-red-500" x-text="(dashboard.remessas?.tentativa || 0) + (dashboard.remessas?.devolvido || 0)"></div>
               <div class="text-xs text-gray-400 mt-1">falhas de entrega</div>
             </div>
-            <div class="kpi-card bg-white rounded-xl p-4 shadow-sm border border-gray-100 card-hover cursor-pointer"
+            <div class="kpi-card bg-white rounded-xl p-3 shadow-sm border border-gray-100 card-hover cursor-pointer"
                  @click="page='alertas'; alertaFiltro='critica'; loadAlertas()">
               <div class="text-xs text-gray-500 uppercase tracking-wide mb-1">Alertas Críticos</div>
               <div class="text-3xl font-black text-red-600" x-text="dashboard.alertas?.critica || 0"></div>
               <div class="text-xs text-gray-400 mt-1">requerem atenção</div>
+            </div>
+            <div class="kpi-card bg-white rounded-xl p-3 shadow-sm border border-orange-100 card-hover cursor-pointer"
+                 style="border-top-color:#F97316"
+                 @click="page='rastreio'; rastreioFiltro.status='novo'; rastreioFiltro.semOnda=true; rastreioFiltro.nfEmitida=null; loadRemessas()">
+              <div class="text-xs text-gray-500 uppercase tracking-wide mb-1">🕐 Pendentes</div>
+              <div class="text-3xl font-black text-orange-500" x-text="dashboard.pendentes || 0"></div>
+              <div class="text-xs text-gray-400 mt-1">nunca planejadas</div>
+            </div>
+            <div class="kpi-card bg-white rounded-xl p-3 shadow-sm border border-yellow-100 card-hover cursor-pointer"
+                 style="border-top-color:#CA8A04"
+                 @click="page='rastreio'; rastreioFiltro.status=''; rastreioFiltro.semOnda=false; rastreioFiltro.nfEmitida=false; loadRemessas()">
+              <div class="text-xs text-gray-500 uppercase tracking-wide mb-1">📄 Sem NF</div>
+              <div class="text-3xl font-black text-yellow-700" x-text="dashboard.sem_nf || 0"></div>
+              <div class="text-xs text-gray-400 mt-1">despacho bloqueado</div>
             </div>
           </div>
 
@@ -329,10 +349,10 @@
                       <span class="text-gray-600" x-text="label"></span>
                       <span class="font-semibold" x-text="dashboard.remessas?.[key] || 0"></span>
                     </div>
-                    <div class="bg-gray-100 rounded-full h-1.5">
+                    <div class="bg-gray-100 rounded-full h-1.5 progress-bar-container">
                       <div class="h-1.5 rounded-full progress-bar"
                            :class="color"
-                           :style="'width:' + pct(dashboard.remessas?.[key] || 0) + '%'"></div>
+                           :style="'--progress:' + pct(dashboard.remessas?.[key] || 0) + '%'"></div>
                     </div>
                   </div>
                 </template>
@@ -365,7 +385,21 @@
           <!-- Ondas do dia -->
           <div class="bg-white rounded-xl shadow-sm border border-gray-100">
             <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-              <div class="text-sm font-semibold text-gray-700">Ondas do Dia</div>
+              <div class="flex items-center gap-3">
+                <div class="text-sm font-semibold text-gray-700">Ondas do Dia</div>
+                <div class="flex items-center gap-1">
+                  <button @click="mudarDiaOndas(-1)"
+                          class="w-6 h-6 flex items-center justify-center rounded-md border border-gray-200 text-gray-500 hover:bg-gray-50"
+                          title="Dia anterior">‹</button>
+                  <input type="date" x-model="ondasData" @change="loadOndas()"
+                         class="border border-gray-300 rounded-md px-2 py-1 text-xs focus:outline-none focus:ring-2 ring-bd" />
+                  <button @click="mudarDiaOndas(1)"
+                          class="w-6 h-6 flex items-center justify-center rounded-md border border-gray-200 text-gray-500 hover:bg-gray-50"
+                          title="Próximo dia">›</button>
+                  <button x-show="ondasData !== hojeISO" @click="ondasData = hojeISO; loadOndas()"
+                          class="text-xs bd-blue font-semibold hover:underline ml-1">Hoje</button>
+                </div>
+              </div>
               <span class="text-xs text-gray-400" x-text="ondas.length + ' ondas planejadas'"></span>
             </div>
             <div x-show="ondas.length === 0" class="px-5 py-8 text-center text-gray-400 text-sm">
@@ -466,6 +500,31 @@
                   </tbody>
                 </template>
               </table>
+            </div>
+          </div>
+
+          <!-- Próximos Dias -->
+          <div class="bg-white rounded-xl shadow-sm border border-gray-100">
+            <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+              <div class="text-sm font-semibold text-gray-700">Próximos Dias</div>
+              <span class="text-xs text-gray-400">planejamento futuro — próximos 5 dias úteis</span>
+            </div>
+            <div x-show="proximosDias.length === 0" class="px-5 py-6 text-center text-gray-400 text-sm">
+              Carregando...
+            </div>
+            <div x-show="proximosDias.length > 0" class="grid grid-cols-5 divide-x divide-gray-100">
+              <template x-for="d in proximosDias" :key="d.data">
+                <div class="p-4 text-center cursor-pointer hover:bg-gray-50 transition-colors"
+                     @click="ondasData = d.data; loadOndas()"
+                     :title="'Ver ondas de ' + formatarDataCurta(d.data)">
+                  <div class="text-xs font-semibold text-gray-500 uppercase" x-text="formatarDiaSemana(d.data)"></div>
+                  <div class="text-xs text-gray-400 mb-2" x-text="formatarDataCurta(d.data)"></div>
+                  <div class="text-2xl font-black text-green-600" x-text="d.planejadas"></div>
+                  <div class="text-xs text-gray-400 mb-2">planejadas</div>
+                  <div class="text-lg font-bold" :class="d.pendentes > 0 ? 'text-orange-500' : 'text-gray-300'" x-text="d.pendentes"></div>
+                  <div class="text-xs text-gray-400">pendentes</div>
+                </div>
+              </template>
             </div>
           </div>
 
@@ -757,6 +816,16 @@
                     class="bg-bd text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-[#004070]">
               Buscar
             </button>
+            <span x-show="rastreioFiltro.semOnda"
+                  @click="rastreioFiltro.semOnda=false; loadRemessas()"
+                  class="text-xs font-semibold px-3 py-1.5 rounded-full bg-orange-100 text-orange-700 cursor-pointer whitespace-nowrap">
+              🕐 Pendentes (sem onda) ✕
+            </span>
+            <span x-show="rastreioFiltro.nfEmitida===false"
+                  @click="rastreioFiltro.nfEmitida=null; loadRemessas()"
+                  class="text-xs font-semibold px-3 py-1.5 rounded-full bg-yellow-100 text-yellow-800 cursor-pointer whitespace-nowrap">
+              📄 Sem NF ✕
+            </span>
             <span class="text-xs text-gray-400 ml-auto"
                   x-text="remessas.length + ' remessas'"></span>
           </div>
@@ -892,11 +961,21 @@
 
           <!-- Destaque de economia -->
           <div class="bg-gradient-to-r from-blue-900 to-blue-700 rounded-xl p-5 text-white">
-            <div class="text-sm font-semibold text-blue-200 mb-1">Economia Potencial Identificada</div>
-            <div class="text-4xl font-black mb-1"
-                 x-text="'R$ ' + totalEconomia.toLocaleString('pt-BR', {minimumFractionDigits:2})"></div>
-            <div class="text-sm text-blue-200"
-                 x-text="oportunidades.length + ' oportunidades de consolidação FTL detectadas'"></div>
+            <div class="flex items-start justify-between gap-4">
+              <div>
+                <div class="text-sm font-semibold text-blue-200 mb-1">Economia Potencial Identificada</div>
+                <div class="text-4xl font-black mb-1"
+                     x-text="'R$ ' + totalEconomia.toLocaleString('pt-BR', {minimumFractionDigits:2})"></div>
+                <div class="text-sm text-blue-200"
+                     x-text="oportunidades.length + ' oportunidades de consolidação FTL detectadas'"></div>
+              </div>
+              <button @click="analisarOportunidades()"
+                      :disabled="analisandoOportunidades"
+                      class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 whitespace-nowrap disabled:opacity-50">
+                <span x-show="!analisandoOportunidades">🔄 Recalcular (últimos 30 dias)</span>
+                <span x-show="analisandoOportunidades">Analisando...</span>
+              </button>
+            </div>
           </div>
 
           <!-- O problema atual -->
@@ -914,7 +993,7 @@
                 <div class="text-xs text-gray-400 mt-1">acumulando volume por região</div>
               </div>
               <div class="p-4 bg-green-50 rounded-xl border border-green-100">
-                <div class="text-3xl font-black text-green-600">15 m³</div>
+                <div class="text-3xl font-black text-green-600">18 m³</div>
                 <div class="text-xs text-green-600 font-medium mt-1">Limiar para FTL viável</div>
                 <div class="text-xs text-gray-400 mt-1">volume mínimo por carga</div>
               </div>
@@ -962,7 +1041,7 @@
                   </div>
                   <div class="bg-gray-50 rounded-lg p-3 text-center">
                     <div class="text-xl font-black text-green-600">✓ FTL</div>
-                    <div class="text-xs text-gray-400">viável (≥ 15 m³)</div>
+                    <div class="text-xs text-gray-400">viável (≥ 18 m³)</div>
                   </div>
                 </div>
 
@@ -1407,6 +1486,54 @@
                     <!-- painel expansível de histórico -->
                     <tr x-show="transpExpandida === t.id" x-transition>
                       <td colspan="8" class="bg-slate-50 px-5 py-4 border-t border-blue-100">
+
+                        <!-- Exportar Relatório -->
+                        <div class="flex items-center justify-between gap-3 mb-4 pb-4 border-b border-gray-200" @click.stop>
+                          <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                            Relatório de Performance
+                          </div>
+                          <div class="flex items-center gap-2">
+                            <select x-model="relatorioTranspPeriodo"
+                                    class="border border-gray-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none">
+                              <option value="semana">Última semana</option>
+                              <option value="mes">Último mês</option>
+                              <option value="trimestre">Último trimestre</option>
+                            </select>
+                            <button @click="exportarRelatorioTransp(t, 'pdf')"
+                                    class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-bd text-white hover:bg-[#004070]">
+                              📄 Exportar PDF
+                            </button>
+                            <button @click="exportarRelatorioTransp(t, 'xlsx')"
+                                    class="text-xs font-semibold px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50">
+                              📊 Exportar XLSX
+                            </button>
+                          </div>
+                        </div>
+
+                        <!-- Próximas coletas programadas -->
+                        <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
+                          Próximas coletas programadas — próximos 3 dias úteis
+                        </div>
+                        <div x-show="!t.proximas_coletas || t.proximas_coletas.length === 0"
+                             class="text-xs text-gray-400 py-2 mb-4">
+                          Nenhuma coleta planejada para os próximos 3 dias úteis.
+                        </div>
+                        <div x-show="t.proximas_coletas && t.proximas_coletas.length > 0" class="space-y-1.5 mb-4">
+                          <template x-for="c in (t.proximas_coletas || [])" :key="c.onda_id">
+                            <div class="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-gray-100 text-xs">
+                              <div class="flex items-center gap-3">
+                                <span class="font-semibold text-gray-700" x-text="c.data.split('-').reverse().join('/')"></span>
+                                <span class="bg-gray-100 px-1.5 py-0.5 rounded text-gray-500" x-text="c.cd"></span>
+                                <span class="text-gray-600" x-text="c.nome"></span>
+                              </div>
+                              <div class="flex items-center gap-3 text-gray-400">
+                                <span x-text="(c.horario_coleta || 'horário a def.')"></span>
+                                <span x-text="c.volume_m3.toFixed(1) + ' m³'"></span>
+                              </div>
+                            </div>
+                          </template>
+                        </div>
+
                         <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
                           Últimos eventos — <span class="text-gray-700" x-text="t.nome"></span>
                         </div>
@@ -1542,6 +1669,21 @@
                 <option value="OSA">Osasco (OSA)</option>
                 <option value="ITJ">Itajaí (ITJ)</option>
               </select>
+            </div>
+            <div>
+              <label class="text-xs text-gray-500 block mb-1">Exportar</label>
+              <div class="flex items-center gap-2">
+                <button @click="exportarHistoricoOndas('pdf')"
+                        :disabled="exportandoHistoricoOndas"
+                        class="text-xs font-semibold px-3 py-2 rounded-lg bg-bd text-white hover:bg-[#004070] disabled:opacity-50">
+                  📄 PDF
+                </button>
+                <button @click="exportarHistoricoOndas('xlsx')"
+                        :disabled="exportandoHistoricoOndas"
+                        class="text-xs font-semibold px-3 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+                  📊 XLSX
+                </button>
+              </div>
             </div>
             <button @click="loadHistoricoOndas()" class="ml-auto text-xs bd-blue hover:underline">Atualizar</button>
           </div>
@@ -2327,10 +2469,15 @@
       uploading: false,
       uploadResult: null,
       exportandoPDF: false,
+      relatorioTranspPeriodo: 'mes',
+      exportandoRelatorioTransp: null,
+      analisandoOportunidades: false,
       horaAtual: '',
       dataHoje: '',
       alertasCriticos: 0,
-      rastreioFiltro: { busca: '', status: '', transportadoraId: '' },
+      rastreioFiltro: { busca: '', status: '', transportadoraId: '', semOnda: false, nfEmitida: null },
+      ondasData: '',
+      proximosDias: [],
       // Modal de alerta
       alertaModal: false,
       alertaDetalhe: null,
@@ -2392,6 +2539,7 @@
       historicoOndasCd: '',
       historicoOndas: [],
       historicoOndasCarregando: false,
+      exportandoHistoricoOndas: false,
       planoExpandidoHistorico: null,
       ondaExpandidaHistorico: null,
       remessasOndaHistorico: [],
@@ -2495,8 +2643,48 @@
              + (r.em_transito||0) + (r.em_rota_entrega||0) + (r.tentativa||0);
       },
 
+      // Total de TODOS os status (inclui entregue/devolvido) — denominador
+      // correto para as barras de "Status das Remessas". totalRemessasHoje
+      // exclui entregue/devolvido de propósito (é "remessas ativas" do card
+      // KPI) e não pode ser reaproveitado aqui: como entregue normalmente é
+      // a maior contagem, usar aquele total como base fazia a barra de
+      // Entregues passar de 100% e estourar o container.
+      get totalRemessasGeral() {
+        const r = this.dashboard.remessas || {};
+        return Object.values(r).reduce((soma, valor) => soma + (valor || 0), 0);
+      },
+
       get totalEconomia() {
         return this.oportunidades.reduce((a, op) => a + (op.economia_estimada || 0), 0);
+      },
+
+      get hojeISO() {
+        return this._dataISOLocal(new Date());
+      },
+
+      _dataISOLocal(d) {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const dia = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${dia}`;
+      },
+
+      mudarDiaOndas(delta) {
+        const [y, m, d] = this.ondasData.split('-').map(Number);
+        const dt = new Date(y, m - 1, d);
+        dt.setDate(dt.getDate() + delta);
+        this.ondasData = this._dataISOLocal(dt);
+        this.loadOndas();
+      },
+
+      formatarDiaSemana(iso) {
+        const [y, m, d] = iso.split('-').map(Number);
+        return new Date(y, m - 1, d).toLocaleDateString('pt-BR', { weekday: 'short' });
+      },
+
+      formatarDataCurta(iso) {
+        const [y, m, d] = iso.split('-').map(Number);
+        return new Date(y, m - 1, d).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
       },
 
       get remessasFiltradas() {
@@ -2512,8 +2700,9 @@
       },
 
       pct(val) {
-        const total = this.totalRemessasHoje || 1;
-        return Math.round((val / total) * 100);
+        const totalGeral = this.totalRemessasGeral;
+        const pct = (val / Math.max(totalGeral, 1)) * 100;
+        return Math.min(100, Math.round(pct));
       },
 
       async init() {
@@ -2536,6 +2725,7 @@
         }
 
         this.updateTime();
+        this.ondasData = this.hojeISO;
         setInterval(() => this.updateTime(), 1000);
         if (this.token) {
           await this.loadDashboard();
@@ -2551,7 +2741,7 @@
           if (p === 'rastreio')        { this.loadRemessas(); this.loadTransportadoras(); }
           if (p === 'alertas')         this.loadAlertas();
           if (p === 'oportunidades')   this.loadOportunidades();
-          if (p === 'dashboard')       { this.loadDashboard(); this.loadOndas(); }
+          if (p === 'dashboard')       { this.loadDashboard(); this.loadOndas(); this.loadProximosDias(); }
           if (p === 'clientes')        this.loadClientes();
           if (p === 'painel_diagnostico')           { this.loadPainelDiagnostico(); this.loadUltimosErros(); }
           if (p === 'transportadoras') { this.loadTransportadoras(); this.loadCotacao(); this.loadEstatisticasTransp(); }
@@ -2575,15 +2765,25 @@
           this.alertasCriticos = this.dashboard.alertas?.critica || 0;
           this.$nextTick(() => this.renderOtifChart());
           await this.loadOndas();
+          await this.loadProximosDias();
         } catch(e) { console.error('dashboard:', e); }
       },
 
       async loadOndas() {
         try {
-          const params = this.cdFiltro ? `?cd_codigo=${this.cdFiltro}` : '';
-          const res = await fetch(`/api/ondas-hoje${params}`);
+          const params = new URLSearchParams({ data: this.ondasData || this.hojeISO });
+          if (this.cdFiltro) params.set('cd_codigo', this.cdFiltro);
+          const res = await fetch(`/api/ondas-hoje?${params}`);
           this.ondas = await res.json();
         } catch(e) { console.error('ondas:', e); }
+      },
+
+      async loadProximosDias() {
+        try {
+          const params = this.cdFiltro ? `?cd_codigo=${this.cdFiltro}` : '';
+          const res = await fetch(`/api/ondas/proximos-dias${params}`);
+          this.proximosDias = await res.json();
+        } catch(e) { console.error('proximos-dias:', e); }
       },
 
       async loadAlertas() {
@@ -2599,6 +2799,8 @@
           const params = new URLSearchParams({ limit: 200 });
           if (this.rastreioFiltro.status)                    params.set('status', this.rastreioFiltro.status);
           if (this.rastreioFiltro.transportadoraId !== '')    params.set('transportadora_id', this.rastreioFiltro.transportadoraId);
+          if (this.rastreioFiltro.semOnda)                    params.set('sem_onda', 'true');
+          if (this.rastreioFiltro.nfEmitida !== null)         params.set('nf_emitida', this.rastreioFiltro.nfEmitida);
           const res = await fetch(`/api/remessas?${params}`);
           this.remessas = await res.json();
         } catch(e) { console.error('remessas:', e); }
@@ -2609,6 +2811,20 @@
           const res = await fetch('/api/oportunidades');
           this.oportunidades = await res.json();
         } catch(e) { console.error('oportunidades:', e); }
+      },
+
+      async analisarOportunidades() {
+        this.analisandoOportunidades = true;
+        try {
+          const res = await fetch('/api/oportunidades/analisar?dias=30', { method: 'POST' });
+          if (!res.ok) throw new Error('Falha ao analisar oportunidades');
+          await this.loadOportunidades();
+        } catch(e) {
+          console.error('analisarOportunidades:', e);
+          alert('Não foi possível analisar as oportunidades. Verifique se o servidor está rodando.');
+        } finally {
+          this.analisandoOportunidades = false;
+        }
       },
 
       async resolverAlerta(id) {
@@ -2874,6 +3090,27 @@
         }
       },
 
+      async exportarRelatorioTransp(t, formato) {
+        this.exportandoRelatorioTransp = t.id;
+        try {
+          const params = new URLSearchParams({ periodo: this.relatorioTranspPeriodo, formato });
+          const res = await fetch(`/api/transportadoras/${t.id}/relatorio?${params}`);
+          if (!res.ok) throw new Error('Erro ao gerar relatório');
+          const blob = await res.blob();
+          const url  = URL.createObjectURL(blob);
+          const a    = document.createElement('a');
+          a.href     = url;
+          a.download = `relatorio_${t.codigo}_${this.relatorioTranspPeriodo}_${new Date().toISOString().slice(0,10)}.${formato}`;
+          a.click();
+          URL.revokeObjectURL(url);
+        } catch(e) {
+          console.error('exportarRelatorioTransp:', e);
+          alert('Não foi possível gerar o relatório. Verifique se o servidor está rodando.');
+        } finally {
+          this.exportandoRelatorioTransp = null;
+        }
+      },
+
       // ── Clientes ──────────────────────────────────────────────────────────
       async loadClientes() {
         try {
@@ -3058,6 +3295,28 @@
           this.historicoOndas = await res.json();
         } catch(e) { console.error('historico_ondas:', e); }
         this.historicoOndasCarregando = false;
+      },
+
+      async exportarHistoricoOndas(formato) {
+        this.exportandoHistoricoOndas = true;
+        try {
+          const params = new URLSearchParams({ periodo: this.historicoOndasPeriodo, formato });
+          if (this.historicoOndasCd) params.set('cd_codigo', this.historicoOndasCd);
+          const res = await fetch(`/api/ondas/historico/exportar?${params}`);
+          if (!res.ok) throw new Error('Erro ao exportar histórico');
+          const blob = await res.blob();
+          const url  = URL.createObjectURL(blob);
+          const a    = document.createElement('a');
+          a.href     = url;
+          a.download = `historico_ondas_${this.historicoOndasPeriodo}_${new Date().toISOString().slice(0,10)}.${formato}`;
+          a.click();
+          URL.revokeObjectURL(url);
+        } catch(e) {
+          console.error('exportarHistoricoOndas:', e);
+          alert('Não foi possível exportar o histórico. Verifique se o servidor está rodando.');
+        } finally {
+          this.exportandoHistoricoOndas = false;
+        }
       },
 
       togglePlanoHistorico(planoId) {

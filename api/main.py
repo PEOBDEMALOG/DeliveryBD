@@ -19,7 +19,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
-from sqlalchemy import select, and_, func, event
+from sqlalchemy import select, and_, func, event, update, exists
 from sqlalchemy.orm import selectinload
 from sqlalchemy.pool import NullPool
 
@@ -32,6 +32,8 @@ from core.models import (
 )
 from agents.orquestrador import Orquestrador
 from agents.agente_resolvedor import AgenteResolvedor
+from agents.agente_classificador import AgenteClassificador
+from agents.agente_montador import AgenteMontador
 
 logging.basicConfig(
     level=logging.INFO,
@@ -398,12 +400,13 @@ async def dashboard(
 
 # ── ONDAS DE HOJE ─────────────────────────────────────────────────────────────
 
-@app.get("/api/ondas-hoje", summary="Ondas planejadas para hoje")
+@app.get("/api/ondas-hoje", summary="Ondas planejadas para um dia (default: hoje)")
 async def ondas_hoje(
     cd_codigo: Optional[str] = None,
+    data:      Optional[str] = None,
     db: AsyncSession = Depends(get_db),
 ):
-    hoje = date.today()
+    data_plano = date.fromisoformat(data) if data else date.today()
 
     # Resolve cd_id se filtro informado
     cd_id = None
@@ -415,7 +418,7 @@ async def ondas_hoje(
         if cd_obj:
             cd_id = cd_obj.id
 
-    filtro_plano = [PlanoDia.data_plano == hoje]
+    filtro_plano = [PlanoDia.data_plano == data_plano]
     if cd_id:
         filtro_plano.append(PlanoDia.cd_id == cd_id)
 
@@ -463,14 +466,63 @@ async def ondas_hoje(
     return resultado
 
 
-# ── HISTÓRICO DE ONDAS ────────────────────────────────────────────────────────
+# ── PRÓXIMOS DIAS (planejamento futuro) ───────────────────────────────────────
 
-@app.get("/api/ondas/historico", summary="Histórico de ondas agrupado por plano/período")
-async def historico_ondas(
-    periodo: str = "hoje",
+@app.get("/api/ondas/proximos-dias", summary="Resumo de planejamento dos próximos dias úteis")
+async def ondas_proximos_dias(
     cd_codigo: Optional[str] = None,
+    dias:      int           = 5,
     db: AsyncSession = Depends(get_db),
 ):
+    cd_id = None
+    if cd_codigo:
+        res_cd = await db.execute(
+            select(CentroDistribuicao).where(CentroDistribuicao.codigo == cd_codigo)
+        )
+        cd_obj = res_cd.scalar_one_or_none()
+        if cd_obj:
+            cd_id = cd_obj.id
+
+    # Próximos N dias úteis (seg-sex), a partir de amanhã
+    datas: list[date] = []
+    cursor = date.today() + timedelta(days=1)
+    while len(datas) < dias:
+        if cursor.weekday() < 5:
+            datas.append(cursor)
+        cursor += timedelta(days=1)
+
+    tem_onda = exists().where(OndaRemessa.remessa_id == Remessa.id)
+
+    resultado = []
+    for dia in datas:
+        filtro_base = [Remessa.data_extracao == dia]
+        if cd_id:
+            filtro_base.append(Remessa.cd_id == cd_id)
+
+        res_planejadas = await db.execute(
+            select(func.count(Remessa.id)).where(and_(*filtro_base, tem_onda))
+        )
+        res_pendentes = await db.execute(
+            select(func.count(Remessa.id)).where(
+                and_(*filtro_base, Remessa.status == "novo", ~tem_onda)
+            )
+        )
+        resultado.append({
+            "data":       str(dia),
+            "planejadas": res_planejadas.scalar() or 0,
+            "pendentes":  res_pendentes.scalar() or 0,
+        })
+
+    return resultado
+
+
+# ── HISTÓRICO DE ONDAS ────────────────────────────────────────────────────────
+
+async def _coletar_historico_ondas(
+    periodo: str, cd_codigo: Optional[str], db: AsyncSession
+) -> list[dict]:
+    """Lógica compartilhada entre a listagem JSON (/api/ondas/historico) e a
+    exportação PDF/XLSX (/api/ondas/historico/exportar)."""
     hoje = date.today()
     if periodo == "hoje":
         data_inicio, data_fim = hoje, hoje
@@ -577,6 +629,224 @@ async def historico_ondas(
         })
 
     return resultado
+
+
+@app.get("/api/ondas/historico", summary="Histórico de ondas agrupado por plano/período")
+async def historico_ondas(
+    periodo: str = "hoje",
+    cd_codigo: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+):
+    return await _coletar_historico_ondas(periodo, cd_codigo, db)
+
+
+PERIODO_LABELS_HISTORICO = {
+    "hoje": "Hoje", "ontem": "Ontem", "semana": "Últimos 7 dias",
+    "mes": "Este mês", "trimestre": "Últimos 3 meses",
+    "semestre": "Últimos 6 meses", "ano": "Último ano",
+}
+
+
+@app.get("/api/ondas/historico/exportar", summary="Exporta o histórico de ondas em PDF ou XLSX")
+async def exportar_historico_ondas(
+    periodo: str = "mes",
+    cd_codigo: Optional[str] = None,
+    formato: str = "pdf",
+    db: AsyncSession = Depends(get_db),
+):
+    if formato not in ("pdf", "xlsx"):
+        raise HTTPException(422, "formato inválido — use 'pdf' ou 'xlsx'")
+
+    planos = await _coletar_historico_ondas(periodo, cd_codigo, db)
+
+    total_ondas    = sum(p["total_ondas"] for p in planos)
+    total_remessas = sum(p["total_remessas"] for p in planos)
+    otifs_validos  = [p["otif_pct"] for p in planos if p["otif_pct"] is not None]
+    otif_medio     = round(sum(otifs_validos) / len(otifs_validos), 1) if otifs_validos else None
+
+    periodo_label = PERIODO_LABELS_HISTORICO.get(periodo, periodo)
+    nome_arquivo  = f"historico_ondas_{periodo}_{date.today():%Y%m%d}"
+
+    if formato == "xlsx":
+        return _historico_ondas_xlsx(
+            planos, periodo_label, cd_codigo, total_ondas, total_remessas, otif_medio, nome_arquivo,
+        )
+    return _historico_ondas_pdf(
+        planos, periodo_label, cd_codigo, total_ondas, total_remessas, otif_medio, nome_arquivo,
+    )
+
+
+def _historico_ondas_pdf(
+    planos, periodo_label, cd_codigo, total_ondas, total_remessas, otif_medio, nome_arquivo,
+):
+    import io
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.units import cm
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER
+    from reportlab.platypus import (
+        SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, HRFlowable,
+    )
+
+    BD_BLUE   = colors.HexColor("#1A3F6F")
+    GRAY_ROW  = colors.HexColor("#F5F7FA")
+    GRAY_LINE = colors.HexColor("#E5E7EB")
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer, pagesize=landscape(A4),
+        rightMargin=1.5*cm, leftMargin=1.5*cm,
+        topMargin=1.8*cm, bottomMargin=1.8*cm,
+    )
+    styles = getSampleStyleSheet()
+
+    def st(name, **kw):
+        return ParagraphStyle(name, parent=styles["Normal"], **kw)
+
+    title_st = st("T", textColor=BD_BLUE, fontSize=16, fontName="Helvetica-Bold", spaceAfter=2)
+    sub_st   = st("S", textColor=colors.HexColor("#6B7280"), fontSize=9, spaceAfter=6)
+    cell_st  = st("C", fontSize=7, leading=9)
+    foot_st  = st("F", fontSize=6, textColor=colors.HexColor("#9CA3AF"), alignment=TA_CENTER)
+
+    cd_txt = cd_codigo or "Todos os CDs"
+    story = [
+        Paragraph("Histórico de Ondas", title_st),
+        Paragraph(
+            f"Período: {periodo_label} · CD: {cd_txt} · "
+            f"Gerado em {datetime.now():%d/%m/%Y %Hh%M}",
+            sub_st,
+        ),
+        HRFlowable(width="100%", thickness=0.5, color=GRAY_LINE),
+        Spacer(1, 0.3*cm),
+    ]
+
+    otif_txt = f"{otif_medio:.1f}%" if otif_medio is not None else "sem dados"
+    resumo_rows = [["Planos", str(len(planos)), "Ondas", str(total_ondas),
+                     "Remessas", str(total_remessas), "OTIF médio", otif_txt]]
+    t_resumo = Table(resumo_rows, colWidths=[2*cm, 1.6*cm, 2*cm, 1.6*cm, 2.2*cm, 1.6*cm, 2.4*cm, 1.6*cm])
+    t_resumo.setStyle(TableStyle([
+        ("FONTNAME",      (0, 0), (-1, -1), "Helvetica-Bold"),
+        ("FONTSIZE",      (0, 0), (-1, -1), 8),
+        ("TEXTCOLOR",     (0, 0), (-1, -1), colors.HexColor("#4B5563")),
+        ("GRID",          (0, 0), (-1, -1), 0.4, GRAY_LINE),
+        ("TOPPADDING",    (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("BACKGROUND",    (0, 0), (0, 0), GRAY_ROW),
+        ("BACKGROUND",    (2, 0), (2, 0), GRAY_ROW),
+        ("BACKGROUND",    (4, 0), (4, 0), GRAY_ROW),
+        ("BACKGROUND",    (6, 0), (6, 0), GRAY_ROW),
+    ]))
+    story.append(t_resumo)
+    story.append(Spacer(1, 0.4*cm))
+
+    header = ["Data", "CD", "Ciclo", "Onda", "Transportadora", "Status Onda", "Remessas", "OTIF Plano", "Status Plano"]
+    rows = [header]
+    for plano in planos:
+        otif_plano_txt = f"{plano['otif_pct']:.1f}%" if plano["otif_pct"] is not None else "—"
+        for onda in plano["ondas"]:
+            rows.append([
+                plano["data_plano"], plano["cd"] or "—", str(plano["ciclo"]),
+                onda["nome"], onda["transportadora"] or "—", onda["status"],
+                str(onda["total_remessas"]), otif_plano_txt, plano["status_geral"],
+            ])
+
+    if len(rows) > 1:
+        t = Table(
+            rows,
+            colWidths=[2.2*cm, 1.3*cm, 1.3*cm, 5.5*cm, 4*cm, 2.3*cm, 2*cm, 2.2*cm, 2.2*cm],
+            repeatRows=1,
+        )
+        t.setStyle(TableStyle([
+            ("BACKGROUND",     (0, 0), (-1, 0), BD_BLUE),
+            ("TEXTCOLOR",      (0, 0), (-1, 0), colors.white),
+            ("FONTNAME",       (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE",       (0, 0), (-1, -1), 7),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, GRAY_ROW]),
+            ("GRID",           (0, 0), (-1, -1), 0.4, GRAY_LINE),
+            ("VALIGN",         (0, 0), (-1, -1), "MIDDLE"),
+            ("TOPPADDING",     (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING",  (0, 0), (-1, -1), 4),
+        ]))
+        story.append(t)
+    else:
+        story.append(Paragraph("Nenhuma onda encontrada no período.", cell_st))
+
+    story.append(Spacer(1, 0.5*cm))
+    story.append(HRFlowable(width="100%", thickness=0.4, color=GRAY_LINE))
+    story.append(Paragraph("Becton Dickinson — PEO-BD v1.0  |  Documento gerado automaticamente", foot_st))
+
+    doc.build(story)
+    buffer.seek(0)
+    return StreamingResponse(
+        buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={nome_arquivo}.pdf"},
+    )
+
+
+def _historico_ondas_xlsx(
+    planos, periodo_label, cd_codigo, total_ondas, total_remessas, otif_medio, nome_arquivo,
+):
+    import io
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Histórico de Ondas"
+
+    azul_bd     = PatternFill("solid", fgColor="1A3F6F")
+    header_font = Font(bold=True, color="FFFFFF")
+    bold        = Font(bold=True)
+
+    cd_txt = cd_codigo or "Todos os CDs"
+    ws["A1"] = "Histórico de Ondas"
+    ws["A1"].font = Font(bold=True, size=14, color="1A3F6F")
+    ws["A2"] = f"Período: {periodo_label} · CD: {cd_txt}"
+    ws["A2"].font = Font(italic=True, color="6B7280")
+    ws["A3"] = f"Gerado em {datetime.now():%d/%m/%Y %Hh%M}"
+    ws["A3"].font = Font(italic=True, size=8, color="9CA3AF")
+
+    resumo = [
+        ("Planos",          len(planos)),
+        ("Ondas",           total_ondas),
+        ("Remessas",        total_remessas),
+        ("OTIF médio (%)",  otif_medio if otif_medio is not None else "sem dados"),
+    ]
+    linha = 5
+    for label, valor in resumo:
+        ws.cell(row=linha, column=1, value=label).font = bold
+        ws.cell(row=linha, column=2, value=valor)
+        linha += 1
+
+    linha += 1
+    header = ["Data", "CD", "Ciclo", "Onda", "Transportadora", "Status Onda", "Remessas", "OTIF Plano (%)", "Status Plano"]
+    for col, texto in enumerate(header, start=1):
+        c = ws.cell(row=linha, column=col, value=texto)
+        c.font = header_font
+        c.fill = azul_bd
+    linha += 1
+    for plano in planos:
+        for onda in plano["ondas"]:
+            ws.append([
+                plano["data_plano"], plano["cd"] or "—", plano["ciclo"],
+                onda["nome"], onda["transportadora"] or "—", onda["status"],
+                onda["total_remessas"], plano["otif_pct"], plano["status_geral"],
+            ])
+
+    larguras = [12, 8, 7, 32, 24, 14, 11, 14, 13]
+    for i, w in enumerate(larguras, start=1):
+        ws.column_dimensions[chr(64 + i)].width = w
+
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={nome_arquivo}.xlsx"},
+    )
 
 
 @app.get("/api/ondas/{onda_id}/remessas", summary="Lista as remessas de uma onda")
@@ -891,6 +1161,8 @@ async def listar_remessas(
     status:            Optional[str]  = None,
     prioridade:        Optional[str]  = None,
     transportadora_id: Optional[int]  = None,
+    sem_onda:          Optional[bool] = None,
+    nf_emitida:        Optional[bool] = None,
     limit:             int            = 500,
     db: AsyncSession = Depends(get_db),
 ):
@@ -903,6 +1175,12 @@ async def listar_remessas(
         filtros.append(Remessa.status == status)
     if prioridade:
         filtros.append(Remessa.prioridade == prioridade)
+    if nf_emitida is not None:
+        filtros.append(Remessa.nf_emitida == nf_emitida)
+    if sem_onda:
+        # Nunca foi agrupada em nenhuma onda — mesma definição usada em
+        # /api/admin/reprocessar-historico e no card "Pendentes" do dashboard.
+        filtros.append(~exists().where(OndaRemessa.remessa_id == Remessa.id))
 
     query = (
         select(Remessa)
@@ -964,11 +1242,15 @@ async def listar_remessas(
 
 @app.get("/api/oportunidades", summary="Oportunidades de consolidação FTL")
 async def listar_oportunidades(
-    status: Optional[str] = None,
+    status: Optional[str] = "aberta",
     db: AsyncSession = Depends(get_db),
 ):
+    # Default "aberta" — sem isso, oportunidades "descartada" (duplicatas
+    # substituídas por uma mais recente da mesma região, ver
+    # AgenteClassificador._analisar_consolidacao) afogam as ativas na
+    # listagem. ?status=todas remove o filtro para ver o histórico completo.
     filtros = []
-    if status:
+    if status and status != "todas":
         filtros.append(OportunidadeConsolidacao.status == status)
 
     query = select(OportunidadeConsolidacao).order_by(
@@ -993,7 +1275,7 @@ async def listar_oportunidades(
             .where(
                 and_(
                     Remessa.cd_id       == o.cd_id,
-                    Remessa.status      == "novo",
+                    Remessa.status.in_(["novo", "planejado", "coletado"]),
                     Remessa.tipo_entrega == "fracionado",
                     Cliente.tem_armazenagem == True,
                     Cliente.regiao      == o.regiao,
@@ -1033,6 +1315,23 @@ async def listar_oportunidades(
         })
 
     return resultado
+
+
+@app.post("/api/oportunidades/analisar", summary="Varre remessas recentes em busca de oportunidades de consolidação FTL")
+async def analisar_oportunidades(
+    dias: int = 30,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Roda sob demanda (botão "Recalcular" na página Oportunidades FTL).
+    Ao contrário da análise automática de classificar_upload()/
+    classificar_periodo() — que só olha o upload ou dia do momento —
+    esta varredura agrega os últimos `dias` dias de remessas ainda em
+    aberto, agrupando por região, para achar padrões de consolidação que só
+    aparecem olhando várias datas juntas.
+    """
+    classificador = AgenteClassificador(db)
+    return await classificador.analisar_oportunidades_periodo(dias)
 
 
 # ── PLANOS E ONDAS ────────────────────────────────────────────────────────────
@@ -1722,8 +2021,40 @@ async def get_estatisticas_transportadoras(db: AsyncSession = Depends(get_db)):
     )
     transportadoras = res_t.scalars().all()
 
+    # Próximos 3 dias úteis (seg-sex), incluindo hoje se hoje for dia útil —
+    # janela usada para "Próximas coletas programadas" de cada transportadora.
+    proximos_dias: list[date] = []
+    cursor = date.today()
+    while len(proximos_dias) < 3:
+        if cursor.weekday() < 5:
+            proximos_dias.append(cursor)
+        cursor += timedelta(days=1)
+
     resultado = []
     for t in transportadoras:
+        res_coletas = await db.execute(
+            select(Onda, PlanoDia.data_plano, CentroDistribuicao.codigo)
+            .join(PlanoDia, Onda.plano_id == PlanoDia.id)
+            .join(CentroDistribuicao, PlanoDia.cd_id == CentroDistribuicao.id)
+            .where(
+                Onda.transportadora_id == t.id,
+                Onda.status == "planejada",
+                PlanoDia.data_plano.in_(proximos_dias),
+            )
+            .order_by(PlanoDia.data_plano, Onda.numero_onda)
+        )
+        proximas_coletas = [
+            {
+                "onda_id":        onda.id,
+                "nome":           onda.nome,
+                "cd":             cd_codigo,
+                "data":           str(data_plano),
+                "horario_coleta": onda.horario_coleta.strftime("%Hh%M") if onda.horario_coleta else None,
+                "volume_m3":      float(onda.volume_total_m3 or 0),
+            }
+            for onda, data_plano, cd_codigo in res_coletas.all()
+        ]
+
         # Total de programações enviadas pelo Comunicador
         res_prog = await db.execute(
             select(func.count(HistoricoEventos.id)).where(
@@ -1803,9 +2134,332 @@ async def get_estatisticas_transportadoras(db: AsyncSession = Depends(get_db)):
             "meta_otif":               meta_otif,
             "abaixo_meta":             abaixo_meta,
             "desvio":                  desvio,
+            "proximas_coletas":        proximas_coletas,
         })
 
     return resultado
+
+
+PERIODO_DIAS_RELATORIO_TRANSP = {"semana": 7, "mes": 30, "trimestre": 90}
+
+
+@app.get("/api/transportadoras/{id}/relatorio", summary="Relatório de performance de uma transportadora")
+async def relatorio_transportadora(
+    id: int,
+    periodo: str = "mes",
+    formato: str = "pdf",
+    db: AsyncSession = Depends(get_db),
+):
+    if periodo not in PERIODO_DIAS_RELATORIO_TRANSP:
+        raise HTTPException(422, f"periodo inválido — use: {', '.join(PERIODO_DIAS_RELATORIO_TRANSP)}")
+    if formato not in ("pdf", "xlsx"):
+        raise HTTPException(422, "formato inválido — use 'pdf' ou 'xlsx'")
+
+    res_t = await db.execute(select(Transportadora).where(Transportadora.id == id))
+    transp = res_t.scalar_one_or_none()
+    if not transp:
+        raise HTTPException(404, "Transportadora não encontrada")
+
+    data_fim    = date.today()
+    data_inicio = data_fim - timedelta(days=PERIODO_DIAS_RELATORIO_TRANSP[periodo])
+
+    # ── Ondas programadas no período ────────────────────────────────────────
+    res_ondas = await db.execute(
+        select(Onda, PlanoDia.data_plano, CentroDistribuicao.codigo)
+        .join(PlanoDia, Onda.plano_id == PlanoDia.id)
+        .join(CentroDistribuicao, PlanoDia.cd_id == CentroDistribuicao.id)
+        .where(
+            Onda.transportadora_id == transp.id,
+            PlanoDia.data_plano >= data_inicio,
+            PlanoDia.data_plano <= data_fim,
+        )
+        .order_by(PlanoDia.data_plano.desc(), Onda.numero_onda)
+    )
+    ondas_periodo = res_ondas.all()
+
+    contagem_remessas_por_onda: dict[int, int] = {}
+    if ondas_periodo:
+        res_qtd = await db.execute(
+            select(OndaRemessa.onda_id, func.count(OndaRemessa.remessa_id))
+            .where(OndaRemessa.onda_id.in_([o.id for o, _, _ in ondas_periodo]))
+            .group_by(OndaRemessa.onda_id)
+        )
+        contagem_remessas_por_onda = dict(res_qtd.all())
+
+    total_ondas     = len(ondas_periodo)
+    volume_total_m3 = sum(float(o.volume_total_m3 or 0) for o, _, _ in ondas_periodo)
+    peso_total_kg   = sum(float(o.peso_total_kg   or 0) for o, _, _ in ondas_periodo)
+    valor_total_nf  = sum(float(o.valor_total_nf  or 0) for o, _, _ in ondas_periodo)
+    total_remessas  = sum(contagem_remessas_por_onda.values())
+
+    # ── OTIF do período ──────────────────────────────────────────────────────
+    res_otif = await db.execute(
+        select(Remessa.status, func.count(Remessa.id))
+        .join(OndaRemessa, OndaRemessa.remessa_id == Remessa.id)
+        .join(Onda, Onda.id == OndaRemessa.onda_id)
+        .join(PlanoDia, Onda.plano_id == PlanoDia.id)
+        .where(
+            Onda.transportadora_id == transp.id,
+            PlanoDia.data_plano >= data_inicio,
+            PlanoDia.data_plano <= data_fim,
+            Remessa.status.in_(["entregue", "tentativa", "devolvido"]),
+        )
+        .group_by(Remessa.status)
+    )
+    contagens_otif = {status: qtd for status, qtd in res_otif.all()}
+    total_fin = sum(contagens_otif.values())
+    otif_pct  = round(contagens_otif.get("entregue", 0) / total_fin * 100, 1) if total_fin > 0 else None
+    meta_otif = transp.meta_otif if transp.meta_otif is not None else 95.0
+
+    # ── Erros do período ──────────────────────────────────────────────────────
+    res_erros = await db.execute(
+        select(HistoricoEventos)
+        .where(
+            HistoricoEventos.transportadora_id == transp.id,
+            HistoricoEventos.tipo_evento        == "erro_sistema",
+            HistoricoEventos.timestamp >= datetime.combine(data_inicio, dtime.min),
+            HistoricoEventos.timestamp <= datetime.combine(data_fim, dtime.max),
+        )
+        .order_by(HistoricoEventos.timestamp.desc())
+        .limit(50)
+    )
+    erros = res_erros.scalars().all()
+
+    nome_arquivo = f"relatorio_{transp.codigo}_{periodo}_{data_fim:%Y%m%d}"
+
+    if formato == "xlsx":
+        return _relatorio_transportadora_xlsx(
+            transp, periodo, data_inicio, data_fim, total_ondas, total_remessas,
+            volume_total_m3, peso_total_kg, valor_total_nf, otif_pct, meta_otif,
+            ondas_periodo, contagem_remessas_por_onda, erros, nome_arquivo,
+        )
+    return _relatorio_transportadora_pdf(
+        transp, periodo, data_inicio, data_fim, total_ondas, total_remessas,
+        volume_total_m3, peso_total_kg, valor_total_nf, otif_pct, meta_otif,
+        ondas_periodo, contagem_remessas_por_onda, erros, nome_arquivo,
+    )
+
+
+def _relatorio_transportadora_pdf(
+    transp, periodo, data_inicio, data_fim, total_ondas, total_remessas,
+    volume_total_m3, peso_total_kg, valor_total_nf, otif_pct, meta_otif,
+    ondas_periodo, contagem_remessas_por_onda, erros, nome_arquivo,
+):
+    import io
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import cm
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER
+    from reportlab.platypus import (
+        SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, HRFlowable,
+    )
+
+    BD_BLUE   = colors.HexColor("#1A3F6F")
+    GRAY_ROW  = colors.HexColor("#F5F7FA")
+    GRAY_LINE = colors.HexColor("#E5E7EB")
+    GREEN_BG  = colors.HexColor("#D1FAE5")
+    RED_BG    = colors.HexColor("#FEE2E2")
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer, pagesize=A4,
+        rightMargin=1.5*cm, leftMargin=1.5*cm,
+        topMargin=1.8*cm, bottomMargin=1.8*cm,
+    )
+    styles = getSampleStyleSheet()
+
+    def st(name, **kw):
+        return ParagraphStyle(name, parent=styles["Normal"], **kw)
+
+    title_st = st("T", textColor=BD_BLUE, fontSize=16, fontName="Helvetica-Bold", spaceAfter=2)
+    sub_st   = st("S", textColor=colors.HexColor("#6B7280"), fontSize=9, spaceAfter=10)
+    h3_st    = st("H3", textColor=BD_BLUE, fontSize=10, fontName="Helvetica-Bold", spaceBefore=10, spaceAfter=4)
+    cell_st  = st("C", fontSize=7, leading=9)
+    foot_st  = st("F", fontSize=6, textColor=colors.HexColor("#9CA3AF"), alignment=TA_CENTER)
+
+    def tbl_style():
+        return TableStyle([
+            ("BACKGROUND",    (0, 0), (-1, 0), BD_BLUE),
+            ("TEXTCOLOR",     (0, 0), (-1, 0), colors.white),
+            ("FONTNAME",      (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE",      (0, 0), (-1, 0), 7),
+            ("FONTSIZE",      (0, 1), (-1, -1), 7),
+            ("ROWBACKGROUNDS",(0, 1), (-1, -1), [colors.white, GRAY_ROW]),
+            ("GRID",          (0, 0), (-1, -1), 0.4, GRAY_LINE),
+            ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+            ("TOPPADDING",    (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ])
+
+    story = [
+        Paragraph(f"Relatório de Performance — {transp.nome}", title_st),
+        Paragraph(
+            f"Período: {periodo} · {data_inicio:%d/%m/%Y} a {data_fim:%d/%m/%Y} · "
+            f"Gerado em {datetime.now():%d/%m/%Y %Hh%M}",
+            sub_st,
+        ),
+        HRFlowable(width="100%", thickness=0.5, color=GRAY_LINE),
+    ]
+
+    # ── Resumo ────────────────────────────────────────────────────────────
+    otif_txt = f"{otif_pct:.1f}%" if otif_pct is not None else "sem dados"
+    abaixo   = otif_pct is not None and otif_pct < meta_otif
+    resumo_rows = [
+        ["Ondas programadas", str(total_ondas), "Remessas transportadas", str(total_remessas)],
+        ["Volume total (m³)", f"{volume_total_m3:.2f}", "Peso total (kg)", f"{peso_total_kg:.1f}"],
+        ["Valor total NF (R$)", f"{valor_total_nf:,.2f}", "OTIF vs. meta", f"{otif_txt} / {meta_otif:.1f}%"],
+    ]
+    t_resumo = Table(resumo_rows, colWidths=[4.2*cm, 3*cm, 4.2*cm, 3*cm])
+    t_resumo.setStyle(TableStyle([
+        ("FONTNAME",   (0, 0), (0, -1), "Helvetica-Bold"),
+        ("FONTNAME",   (2, 0), (2, -1), "Helvetica-Bold"),
+        ("FONTSIZE",   (0, 0), (-1, -1), 8),
+        ("TEXTCOLOR",  (0, 0), (0, -1), colors.HexColor("#4B5563")),
+        ("TEXTCOLOR",  (2, 0), (2, -1), colors.HexColor("#4B5563")),
+        ("BACKGROUND", (3, 2), (3, 2), RED_BG if abaixo else GREEN_BG),
+        ("GRID",       (0, 0), (-1, -1), 0.4, GRAY_LINE),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ]))
+    story.append(t_resumo)
+
+    # ── Ondas programadas no período ─────────────────────────────────────────
+    story.append(Paragraph("Ondas programadas no período", h3_st))
+    if ondas_periodo:
+        header = ["Data", "CD", "Onda", "Tipo", "Status", "Remessas", "Vol. m³"]
+        rows = [header]
+        for onda, data_plano, cd_codigo in ondas_periodo:
+            rows.append([
+                data_plano.strftime("%d/%m/%Y"),
+                cd_codigo,
+                onda.nome,
+                (onda.tipo or "—").upper(),
+                onda.status,
+                str(contagem_remessas_por_onda.get(onda.id, 0)),
+                f"{float(onda.volume_total_m3 or 0):.1f}",
+            ])
+        t_ondas = Table(rows, colWidths=[2.2*cm, 1.3*cm, 5.5*cm, 1.8*cm, 2*cm, 2*cm, 2*cm], repeatRows=1)
+        t_ondas.setStyle(tbl_style())
+        story.append(t_ondas)
+    else:
+        story.append(Paragraph("Nenhuma onda programada no período.", cell_st))
+
+    # ── Erros no período ──────────────────────────────────────────────────────
+    story.append(Paragraph("Erros registrados no período", h3_st))
+    if erros:
+        header = ["Data", "Descrição", "Gravidade"]
+        rows = [header]
+        for e in erros:
+            rows.append([
+                e.timestamp.strftime("%d/%m/%Y %Hh%M"),
+                Paragraph(e.descricao, cell_st),
+                e.gravidade or "—",
+            ])
+        t_erros = Table(rows, colWidths=[3*cm, 11.8*cm, 2*cm], repeatRows=1)
+        t_erros.setStyle(tbl_style())
+        story.append(t_erros)
+    else:
+        story.append(Paragraph("Nenhum erro registrado no período.", cell_st))
+
+    story.append(Spacer(1, 0.5*cm))
+    story.append(HRFlowable(width="100%", thickness=0.4, color=GRAY_LINE))
+    story.append(Paragraph("Becton Dickinson — PEO-BD v1.0  |  Documento gerado automaticamente", foot_st))
+
+    doc.build(story)
+    buffer.seek(0)
+    return StreamingResponse(
+        buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={nome_arquivo}.pdf"},
+    )
+
+
+def _relatorio_transportadora_xlsx(
+    transp, periodo, data_inicio, data_fim, total_ondas, total_remessas,
+    volume_total_m3, peso_total_kg, valor_total_nf, otif_pct, meta_otif,
+    ondas_periodo, contagem_remessas_por_onda, erros, nome_arquivo,
+):
+    import io
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Resumo"
+
+    azul_bd    = PatternFill("solid", fgColor="1A3F6F")
+    header_font = Font(bold=True, color="FFFFFF")
+    bold        = Font(bold=True)
+
+    ws["A1"] = f"Relatório de Performance — {transp.nome}"
+    ws["A1"].font = Font(bold=True, size=14, color="1A3F6F")
+    ws["A2"] = f"Período: {periodo} · {data_inicio:%d/%m/%Y} a {data_fim:%d/%m/%Y}"
+    ws["A2"].font = Font(italic=True, color="6B7280")
+    ws["A3"] = f"Gerado em {datetime.now():%d/%m/%Y %Hh%M}"
+    ws["A3"].font = Font(italic=True, size=8, color="9CA3AF")
+
+    resumo = [
+        ("Ondas programadas",     total_ondas),
+        ("Remessas transportadas", total_remessas),
+        ("Volume total (m³)",     round(volume_total_m3, 2)),
+        ("Peso total (kg)",       round(peso_total_kg, 1)),
+        ("Valor total NF (R$)",   round(valor_total_nf, 2)),
+        ("OTIF do período (%)",   otif_pct if otif_pct is not None else "sem dados"),
+        ("Meta OTIF (%)",         meta_otif),
+    ]
+    linha = 5
+    for label, valor in resumo:
+        ws.cell(row=linha, column=1, value=label).font = bold
+        ws.cell(row=linha, column=2, value=valor)
+        linha += 1
+
+    linha += 1
+    ws.cell(row=linha, column=1, value="Ondas programadas no período").font = Font(bold=True, size=12, color="1A3F6F")
+    linha += 1
+    header_ondas = ["Data", "CD", "Onda", "Tipo", "Status", "Remessas", "Vol. m³"]
+    for col, texto in enumerate(header_ondas, start=1):
+        c = ws.cell(row=linha, column=col, value=texto)
+        c.font = header_font
+        c.fill = azul_bd
+    linha += 1
+    for onda, data_plano, cd_codigo in ondas_periodo:
+        ws.append([
+            data_plano.strftime("%d/%m/%Y"), cd_codigo, onda.nome,
+            (onda.tipo or "—").upper(), onda.status,
+            contagem_remessas_por_onda.get(onda.id, 0),
+            float(onda.volume_total_m3 or 0),
+        ])
+        linha += 1
+
+    linha += 1
+    ws.cell(row=linha, column=1, value="Erros registrados no período").font = Font(bold=True, size=12, color="1A3F6F")
+    linha += 1
+    header_erros = ["Data", "Descrição", "Gravidade"]
+    for col, texto in enumerate(header_erros, start=1):
+        c = ws.cell(row=linha, column=col, value=texto)
+        c.font = header_font
+        c.fill = azul_bd
+    linha += 1
+    for e in erros:
+        ws.append([e.timestamp.strftime("%d/%m/%Y %Hh%M"), e.descricao, e.gravidade or "—"])
+
+    ws.column_dimensions["A"].width = 22
+    ws.column_dimensions["B"].width = 10
+    ws.column_dimensions["C"].width = 40
+    ws.column_dimensions["D"].width = 12
+    ws.column_dimensions["E"].width = 12
+    ws.column_dimensions["F"].width = 12
+    ws.column_dimensions["G"].width = 12
+
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={nome_arquivo}.xlsx"},
+    )
 
 
 @app.get("/api/transportadoras/cotacao", summary="Cotação consolidada por rota/região")
@@ -2548,6 +3202,90 @@ async def seed_demo():
             raise HTTPException(504, "Seed demorou mais de 60s")
         except Exception as e:
             raise HTTPException(500, str(e))
+
+
+# ── REPROCESSAMENTO DE HISTÓRICO (remessas que nunca passaram pelo pipeline) ──
+
+@app.post(
+    "/api/admin/reprocessar-historico",
+    summary="Roda Classificador+Montador para remessas que nunca foram planejadas",
+)
+async def reprocessar_historico(db: AsyncSession = Depends(get_db)):
+    """
+    Remessas inseridas fora do fluxo real de upload (ex.: seed de teste de
+    stress antes desta correção) podem ter ficado com status 'novo' ou
+    'planejado' sem nunca terem sido classificadas nem agrupadas em onda.
+
+    Localiza esses grupos por (cd_id, data_extracao) — cada combinação é um
+    "dia" de trabalho — e roda o Classificador e o Montador reais para cada
+    um, usando data_extracao como data_plano.
+    """
+    tem_onda = exists().where(OndaRemessa.remessa_id == Remessa.id)
+
+    res_grupos = await db.execute(
+        select(Remessa.cd_id, Remessa.data_extracao)
+        .where(Remessa.status.in_(["novo", "planejado"]), ~tem_onda)
+        .distinct()
+    )
+    grupos = res_grupos.all()
+
+    res_cds = await db.execute(select(CentroDistribuicao))
+    cd_codigo_por_id = {cd.id: cd.codigo for cd in res_cds.scalars().all()}
+
+    classificador = AgenteClassificador(db)
+    montador      = AgenteMontador(db)
+
+    dias_processados    = 0
+    ondas_criadas        = 0
+    remessas_planejadas  = 0
+
+    for cd_id, data_extracao in grupos:
+        cd_codigo = cd_codigo_por_id.get(cd_id)
+        if not cd_codigo:
+            logger.warning(f"[Reprocessamento] CD id={cd_id} não encontrado — grupo ignorado")
+            continue
+
+        try:
+            # 'planejado' órfão (sem onda) é herança de dados inconsistentes
+            # do seed antigo — volta pra 'novo' pro Montador reconsiderá-lo
+            # (ele só carrega remessas com status == 'novo').
+            await db.execute(
+                update(Remessa)
+                .where(
+                    Remessa.cd_id         == cd_id,
+                    Remessa.data_extracao == data_extracao,
+                    Remessa.status        == "planejado",
+                    ~tem_onda,
+                )
+                .values(status="novo")
+            )
+            await classificador.classificar_periodo(cd_id, data_extracao)
+            rel_montagem = await montador.montar_plano(cd_codigo, data_extracao)
+        except Exception as e:
+            # Sessão longa contra o Supabase — uma queda de conexão
+            # transitória deixa a Session em PendingRollbackError até um
+            # rollback explícito; sem isso, todo grupo seguinte falharia em
+            # cascata pelo resto do loop.
+            logger.error(f"[Reprocessamento] Falhou {cd_codigo}/{data_extracao}: {e}")
+            try:
+                await db.rollback()
+            except Exception:
+                pass  # conexão pode já estar morta — a próxima query force uma nova
+            continue
+
+        dias_processados    += 1
+        ondas_criadas        += rel_montagem.get("ondas", 0)
+        remessas_planejadas  += rel_montagem.get("remessas", 0)
+
+    logger.info(
+        f"[Reprocessamento] {dias_processados} dia(s), {ondas_criadas} onda(s), "
+        f"{remessas_planejadas} remessa(s) planejada(s)"
+    )
+    return {
+        "dias_processados":    dias_processados,
+        "ondas_criadas":       ondas_criadas,
+        "remessas_planejadas": remessas_planejadas,
+    }
 
 
 # ── RESET DEMO (limpa dados operacionais, mantém infraestrutura) ─────────────

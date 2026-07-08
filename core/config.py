@@ -100,7 +100,13 @@ class Settings:
 
     # ── Regras de negócio BD ────────────────────────────────
     DIAS_ESPERA_FTL:         int   = 5
-    LIMIAR_FTL_M3:           float = 15.0
+    # Volume mínimo (m³) para valer a pena consolidar fracionado em FTL.
+    # Ajustado de 15 para 18 ao ampliar a varredura de oportunidades de
+    # "upload do dia" para agregação de 30 dias (ver
+    # AgenteClassificador.analisar_oportunidades_periodo) — uma janela mais
+    # larga acumula volume por região com muito mais facilidade, então um
+    # piso um pouco mais alto evita sinalizar oportunidades triviais/ruidosas.
+    LIMIAR_FTL_M3:           float = 18.0
     ALERTA_ATA_DIAS:         int   = 5
     ALERTA_JANELA_CRITICA_H: int   = 2
     OCUPACAO_MIN_FTL_PCT:    float = 0.70

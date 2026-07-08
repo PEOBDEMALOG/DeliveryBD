@@ -5,7 +5,7 @@
 # oportunidades de consolidação FTL, clientes sem armazenagem.
 
 import logging
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -38,6 +38,11 @@ class AgenteClassificador:
     def __init__(self, db: AsyncSession):
         self.db = db
         self.historico = HistoricoService(db)
+        # Cache de (remessa_id, tipo) de alertas não resolvidos já existentes,
+        # recarregado a cada classificar_upload/classificar_periodo — evita
+        # 1 SELECT por regra por remessa (N+1 caro sob o Supabase Transaction
+        # Pooler, onde cada round-trip pesa bem mais que localmente).
+        self._alertas_existentes: set[tuple[int, str]] | None = None
 
     # ── Entrada principal ──────────────────────────────────────────────────────
 
@@ -48,6 +53,8 @@ class AgenteClassificador:
         if not remessas:
             return {"upload_id": upload_id, "remessas": 0, "alertas": 0}
 
+        await self._carregar_cache_alertas([r.id for r in remessas])
+
         alertas_criados = 0
         oportunidades   = 0
 
@@ -56,7 +63,7 @@ class AgenteClassificador:
             alertas_criados += novos_alertas
 
         # Análise de consolidação por região
-        oportunidades = await self._analisar_consolidacao(upload_id)
+        oportunidades = await self._analisar_consolidacao(Remessa.upload_id == upload_id)
 
         criticas = sum(1 for r in remessas if r.prioridade == "critica")
         altas    = sum(1 for r in remessas if r.prioridade == "alta")
@@ -97,6 +104,73 @@ class AgenteClassificador:
             "atas":             atas,
         }
 
+        logger.info(f"[Classificador] {alertas_criados} alertas, {oportunidades} oportunidades")
+        return resumo
+
+    async def classificar_periodo(self, cd_id: int, data: date) -> dict[str, Any]:
+        """
+        Mesmo fluxo de classificar_upload(), mas para remessas identificadas
+        por (cd_id, data_extracao) em vez de upload_id — usado para
+        reprocessar remessas que entraram no banco sem passar por um upload
+        real (ex.: seed de teste de stress, correções de histórico).
+        """
+        logger.info(f"[Classificador] Iniciando para cd_id={cd_id} data={data}")
+
+        remessas = await self._carregar_remessas_periodo(cd_id, data)
+        if not remessas:
+            return {"cd_id": cd_id, "data": str(data), "remessas": 0, "alertas_criados": 0}
+
+        await self._carregar_cache_alertas([r.id for r in remessas])
+
+        alertas_criados = 0
+        for remessa in remessas:
+            alertas_criados += await self._classificar_remessa(remessa)
+
+        oportunidades = await self._analisar_consolidacao(
+            and_(Remessa.cd_id == cd_id, Remessa.data_extracao == data)
+        )
+
+        criticas = sum(1 for r in remessas if r.prioridade == "critica")
+        altas    = sum(1 for r in remessas if r.prioridade == "alta")
+        atas     = sum(1 for r in remessas if r.is_ata)
+
+        await self.historico.registrar(
+            tipo_evento="decisao_agente",
+            origem="classificador",
+            ator_tipo="agente_ia",
+            ator_nome="Agente Classificador",
+            cd_id=cd_id,
+            descricao=(
+                f"Reprocessamento {data} classificado — {len(remessas)} remessas: "
+                f"{criticas} críticas, {altas} altas, {atas} ATAs — "
+                f"{alertas_criados} alertas gerados, {oportunidades} oportunidades FTL"
+            ),
+            resultado="sucesso",
+            gravidade="critico" if criticas > 0 else ("alerta" if altas > 0 else None),
+            dados_extra={
+                "cd_id": cd_id,
+                "data": str(data),
+                "remessas": len(remessas),
+                "alertas_criados": alertas_criados,
+                "oportunidades": oportunidades,
+                "criticas": criticas,
+                "altas": altas,
+                "atas": atas,
+            },
+        )
+
+        await self.db.commit()
+
+        resumo = {
+            "cd_id":            cd_id,
+            "data":             str(data),
+            "remessas":         len(remessas),
+            "alertas_criados":  alertas_criados,
+            "oportunidades":    oportunidades,
+            "criticas":         criticas,
+            "altas":            altas,
+            "atas":             atas,
+        }
         logger.info(f"[Classificador] {alertas_criados} alertas, {oportunidades} oportunidades")
         return resumo
 
@@ -228,14 +302,17 @@ class AgenteClassificador:
 
     # ── Análise de consolidação FTL ───────────────────────────────────────────
 
-    async def _analisar_consolidacao(self, upload_id: int) -> int:
+    async def _analisar_consolidacao(self, filtro_remessas) -> int:
         """
         Identifica grupos de clientes em mesma região comprando
         fracionado mas com volume agregado suficiente para FTL.
         Cria OportunidadeConsolidacao para cada grupo.
+
+        `filtro_remessas` é a condição SQLAlchemy que escopa quais remessas
+        entram na análise (por upload_id, ou por cd_id+data_extracao).
         """
 
-        # Agrupa remessas do upload por região
+        # Agrupa remessas do escopo por região
         resultado = await self.db.execute(
             select(
                 Cliente.regiao,
@@ -247,7 +324,7 @@ class AgenteClassificador:
             .join(Cliente, Remessa.cliente_id == Cliente.id)
             .where(
                 and_(
-                    Remessa.upload_id == upload_id,
+                    filtro_remessas,
                     Remessa.tipo_entrega == "fracionado",
                     Cliente.tem_armazenagem == True,   # só consolida quem aceita armazenagem
                 )
@@ -268,54 +345,151 @@ class AgenteClassificador:
 
             # Estima economia: frete FTL ~40% mais barato que fracionado
             economia = float(row.val_total or 0) * 0.40 * 0.10  # 10% do valor da NF em frete
-
-            oportunidade = OportunidadeConsolidacao(
-                cd_id             = row.cd_id,
-                regiao            = row.regiao or "não mapeada",
-                data_analise      = date.today(),
-                qtd_clientes      = row.qtd,
-                volume_atual_m3   = round(vol, 2),
-                tipo_atual        = "fracionado",
-                tipo_possivel     = "ftl",
-                economia_estimada = round(economia, 2),
-                acao_sugerida     = (
-                    f"Consolidar {row.qtd} cliente(s) da região '{row.regiao}' "
-                    f"em uma única carga FTL de {vol:.1f}m³. "
-                    f"Economia estimada de frete: R$ {economia:,.2f}."
-                ),
-                status            = "aberta",
+            regiao = row.regiao or "não mapeada"
+            acao_sugerida = (
+                f"Consolidar {row.qtd} cliente(s) da região '{regiao}' "
+                f"em uma única carga FTL de {vol:.1f}m³. "
+                f"Economia estimada de frete: R$ {economia:,.2f}."
             )
-            self.db.add(oportunidade)
+
+            # Evita duplicar a mesma oportunidade (cd+região) a cada
+            # chamada — atualiza os números de uma já aberta em vez de
+            # criar outra linha. Sem isso, rodar a classificação repetida
+            # (um upload por dia, ou a varredura de 30 dias) empilha
+            # dezenas de linhas redundantes para a mesma região. Podem já
+            # existir várias duplicatas de antes desse dedup existir — usa
+            # a mais recente e fecha o resto como "descartada".
+            existente = await self.db.execute(
+                select(OportunidadeConsolidacao)
+                .where(
+                    and_(
+                        OportunidadeConsolidacao.cd_id  == row.cd_id,
+                        OportunidadeConsolidacao.regiao == regiao,
+                        OportunidadeConsolidacao.status == "aberta",
+                    )
+                )
+                .order_by(OportunidadeConsolidacao.criado_em.desc())
+            )
+            duplicatas = existente.scalars().all()
+            oportunidade = duplicatas[0] if duplicatas else None
+            for extra in duplicatas[1:]:
+                extra.status = "descartada"
+
+            if oportunidade:
+                oportunidade.data_analise      = date.today()
+                oportunidade.qtd_clientes      = row.qtd
+                oportunidade.volume_atual_m3   = round(vol, 2)
+                oportunidade.economia_estimada = round(economia, 2)
+                oportunidade.acao_sugerida     = acao_sugerida
+            else:
+                oportunidade = OportunidadeConsolidacao(
+                    cd_id             = row.cd_id,
+                    regiao            = regiao,
+                    data_analise      = date.today(),
+                    qtd_clientes      = row.qtd,
+                    volume_atual_m3   = round(vol, 2),
+                    tipo_atual        = "fracionado",
+                    tipo_possivel     = "ftl",
+                    economia_estimada = round(economia, 2),
+                    acao_sugerida     = acao_sugerida,
+                    status            = "aberta",
+                )
+                self.db.add(oportunidade)
+
             oportunidades += 1
 
         return oportunidades
 
+    async def analisar_oportunidades_periodo(self, dias: int = 30) -> dict[str, Any]:
+        """
+        Varredura sob demanda de oportunidades de consolidação FTL — analisa
+        as remessas recentes (últimos `dias` dias, não só o upload do dia)
+        agrupando por região/rota. Complementa a análise em tempo real de
+        classificar_upload()/classificar_periodo() (que só olha o upload ou
+        dia corrente) com uma visão agregada do histórico recente, onde
+        volume de FTL costuma se acumular ao longo de vários dias.
+        """
+        data_inicio = date.today() - timedelta(days=dias)
+        logger.info(f"[Classificador] Varredura de oportunidades — últimos {dias} dia(s)")
+
+        oportunidades = await self._analisar_consolidacao(
+            and_(
+                Remessa.data_extracao >= data_inicio,
+                Remessa.status.in_(["novo", "planejado", "coletado"]),
+            )
+        )
+
+        await self.historico.registrar(
+            tipo_evento="decisao_agente",
+            origem="classificador",
+            ator_tipo="agente_ia",
+            ator_nome="Agente Classificador",
+            descricao=(
+                f"Varredura de oportunidades FTL — últimos {dias} dias: "
+                f"{oportunidades} oportunidade(s) identificada(s)"
+            ),
+            resultado="sucesso",
+            dados_extra={"dias": dias, "oportunidades": oportunidades},
+        )
+        await self.db.commit()
+
+        logger.info(f"[Classificador] {oportunidades} oportunidade(s) de consolidação FTL")
+        return {"dias": dias, "oportunidades": oportunidades}
+
     # ── Helpers ───────────────────────────────────────────────────────────────
 
     async def _criar_alerta(self, **kwargs) -> None:
-        # Evita duplicatas de alertas não resolvidos para mesma remessa+tipo
+        # Evita duplicatas de alertas não resolvidos para mesma remessa+tipo.
+        # Usa o cache pré-carregado (_carregar_cache_alertas) quando
+        # disponível — só cai para a query individual se chamado fora do
+        # fluxo normal (cache não inicializado).
         remessa_id = kwargs.get("remessa_id")
         tipo       = kwargs.get("tipo")
         if remessa_id and tipo:
-            existente = await self.db.execute(
-                select(Alerta).where(
-                    and_(
-                        Alerta.remessa_id == remessa_id,
-                        Alerta.tipo       == tipo,
-                        Alerta.resolvido  == False,
+            if self._alertas_existentes is not None:
+                if (remessa_id, tipo) in self._alertas_existentes:
+                    return  # alerta já existe
+            else:
+                existente = await self.db.execute(
+                    select(Alerta).where(
+                        and_(
+                            Alerta.remessa_id == remessa_id,
+                            Alerta.tipo       == tipo,
+                            Alerta.resolvido  == False,
+                        )
                     )
                 )
-            )
-            if existente.scalar_one_or_none():
-                return  # alerta já existe
+                if existente.scalar_one_or_none():
+                    return  # alerta já existe
 
         alerta = Alerta(**kwargs)
         self.db.add(alerta)
+        if remessa_id and tipo and self._alertas_existentes is not None:
+            self._alertas_existentes.add((remessa_id, tipo))
+
+    async def _carregar_cache_alertas(self, remessa_ids: list[int]) -> None:
+        if not remessa_ids:
+            self._alertas_existentes = set()
+            return
+        res = await self.db.execute(
+            select(Alerta.remessa_id, Alerta.tipo).where(
+                and_(Alerta.remessa_id.in_(remessa_ids), Alerta.resolvido == False)
+            )
+        )
+        self._alertas_existentes = {(rid, tipo) for rid, tipo in res.all()}
 
     async def _carregar_remessas(self, upload_id: int) -> list[Remessa]:
         res = await self.db.execute(
             select(Remessa)
             .options(selectinload(Remessa.cliente))
             .where(Remessa.upload_id == upload_id)
+        )
+        return list(res.scalars().all())
+
+    async def _carregar_remessas_periodo(self, cd_id: int, data: date) -> list[Remessa]:
+        res = await self.db.execute(
+            select(Remessa)
+            .options(selectinload(Remessa.cliente))
+            .where(and_(Remessa.cd_id == cd_id, Remessa.data_extracao == data))
         )
         return list(res.scalars().all())

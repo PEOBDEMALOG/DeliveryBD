@@ -11,12 +11,12 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, func
+from sqlalchemy import select, and_, func, exists
 from sqlalchemy.orm import selectinload
 
 from core.config import settings
 from core.historico import HistoricoService
-from core.models import Alerta, EventoRastreio, Remessa, ProgramacaoColeta, Onda
+from core.models import Alerta, EventoRastreio, Remessa, ProgramacaoColeta, Onda, OndaRemessa
 
 logger = logging.getLogger(__name__)
 
@@ -323,11 +323,36 @@ class AgenteMonitor:
         total_fin = contagens["entregue"] + contagens["tentativa"] + contagens["devolvido"]
         otif = (contagens["entregue"] / total_fin * 100) if total_fin > 0 else 0.0
 
+        # Pendentes: status 'novo' que nunca foi agrupado em nenhuma onda
+        # (mesma definição usada em /api/admin/reprocessar-historico).
+        tem_onda = exists().where(OndaRemessa.remessa_id == Remessa.id)
+        res_pendentes = await self.db.execute(
+            select(func.count(Remessa.id)).where(
+                and_(Remessa.status == "novo", ~tem_onda, *filtro)
+            )
+        )
+        pendentes = res_pendentes.scalar() or 0
+
+        # Sem NF: nf_emitida=False e ainda ativa (mesma definição do
+        # Painel de Diagnóstico — só exclui os estados finais).
+        res_sem_nf = await self.db.execute(
+            select(func.count(Remessa.id)).where(
+                and_(
+                    Remessa.nf_emitida == False,
+                    Remessa.status.not_in(["entregue", "devolvido"]),
+                    *filtro,
+                )
+            )
+        )
+        sem_nf = res_sem_nf.scalar() or 0
+
         return {
             "remessas":      contagens,
             "alertas":       alertas,
             "otif_pct":      round(otif, 1),
             "meta_otif_pct": settings.META_OTIF_PCT * 100,
+            "pendentes":     pendentes,
+            "sem_nf":        sem_nf,
             "gerado_em":     datetime.utcnow().isoformat(),
         }
 

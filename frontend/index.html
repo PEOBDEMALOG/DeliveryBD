@@ -385,12 +385,12 @@
               <div class="flex items-center gap-3">
                 <div class="text-sm font-semibold text-gray-700">Ondas do Dia</div>
                 <div class="flex items-center gap-1">
-                  <button @click="mudarDiaOndas(-1)"
+                  <button @click="diaAnterior()"
                           class="w-6 h-6 flex items-center justify-center rounded-md border border-gray-200 text-gray-500 hover:bg-gray-50"
                           title="Dia anterior">‹</button>
                   <input type="date" x-model="ondasData" @change="loadOndas()"
                          class="border border-gray-300 rounded-md px-2 py-1 text-xs focus:outline-none focus:ring-2 ring-bd" />
-                  <button @click="mudarDiaOndas(1)"
+                  <button @click="proximoDia()"
                           class="w-6 h-6 flex items-center justify-center rounded-md border border-gray-200 text-gray-500 hover:bg-gray-50"
                           title="Próximo dia">›</button>
                   <button x-show="ondasData !== hojeISO" @click="ondasData = hojeISO; loadOndas()"
@@ -1006,7 +1006,7 @@
           <div class="space-y-4">
             <template x-for="op in oportunidades" :key="op.id">
               <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5 card-hover cursor-pointer"
-                   @click="oportunidadeExpandida = oportunidadeExpandida===op.id ? null : op.id">
+                   @click="toggleFTL(op.id)">
                 <div class="flex items-start justify-between mb-4">
                   <div>
                     <div class="flex items-center gap-2 mb-1">
@@ -1965,7 +1965,7 @@
   <!-- ═══════════════════════════════════════════════════════════════
        BOTÃO FLUTUANTE: ASSISTENTE (visível em todas as páginas)
   ════════════════════════════════════════════════════════════════ -->
-  <button x-show="!chatAssistenteAberto" x-cloak
+  <button x-show="!popupAssistente" x-cloak
           @click="abrirAssistenteGeral()"
           class="fixed bottom-5 right-5 z-[60] bg-bd hover:bg-[#004070] text-white font-semibold text-sm px-4 py-3 rounded-full shadow-2xl flex items-center gap-2 transition-colors">
     <span class="text-lg leading-none">💬</span>
@@ -1975,7 +1975,7 @@
   <!-- ═══════════════════════════════════════════════════════════════
        POPUP: ASSISTENTE DE DIAGNÓSTICO
   ════════════════════════════════════════════════════════════════ -->
-  <div x-show="chatAssistenteAberto" x-cloak
+  <div x-show="popupAssistente" x-cloak
        x-transition:enter="transition ease-out duration-200"
        x-transition:enter-start="opacity-0 translate-y-4"
        x-transition:enter-end="opacity-100 translate-y-0"
@@ -2147,17 +2147,17 @@
        @keydown.escape.window="fecharAlertaModal()">
     <div class="absolute inset-0 bg-black bg-opacity-40" @click="fecharAlertaModal()"></div>
     <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto mx-4">
-      <template x-if="alertaDetalhe">
+      <template x-if="modalAlerta">
         <div>
           <div class="bg-bd px-6 py-5 rounded-t-2xl">
             <div class="flex items-start justify-between">
               <div>
-                <div class="text-white font-bold text-lg leading-tight" x-text="alertaDetalhe.titulo"></div>
+                <div class="text-white font-bold text-lg leading-tight" x-text="modalAlerta.titulo"></div>
                 <div class="flex items-center gap-2 mt-1.5">
                   <span class="text-xs font-semibold px-2 py-0.5 rounded-full"
-                        :class="'severity-' + alertaDetalhe.severidade"
-                        x-text="alertaDetalhe.severidade?.toUpperCase()"></span>
-                  <span class="text-blue-300 text-xs font-mono" x-text="alertaDetalhe.tipo"></span>
+                        :class="'severity-' + modalAlerta.severidade"
+                        x-text="modalAlerta.severidade?.toUpperCase()"></span>
+                  <span class="text-blue-300 text-xs font-mono" x-text="modalAlerta.tipo"></span>
                 </div>
               </div>
               <button @click="fecharAlertaModal()" class="text-blue-300 hover:text-white text-2xl leading-none mt-1">×</button>
@@ -2168,18 +2168,18 @@
             <div class="grid grid-cols-2 gap-3 text-sm">
               <div class="bg-gray-50 rounded-lg p-3">
                 <div class="text-xs text-gray-400 mb-1">Remessa associada</div>
-                <div class="font-semibold text-gray-700" x-text="alertaDetalhe.remessa_id || '—'"></div>
+                <div class="font-semibold text-gray-700" x-text="modalAlerta.remessa_id || '—'"></div>
               </div>
               <div class="bg-gray-50 rounded-lg p-3">
                 <div class="text-xs text-gray-400 mb-1">Criado em</div>
                 <div class="font-semibold text-gray-700"
-                     x-text="alertaDetalhe.criado_em ? new Date(alertaDetalhe.criado_em).toLocaleString('pt-BR') : '—'"></div>
+                     x-text="modalAlerta.criado_em ? new Date(modalAlerta.criado_em).toLocaleString('pt-BR') : '—'"></div>
               </div>
             </div>
 
             <div>
               <div class="text-xs text-gray-400 mb-1">Descrição completa</div>
-              <p class="text-sm text-gray-700 bg-gray-50 rounded-lg p-3 leading-relaxed" x-text="alertaDetalhe.descricao"></p>
+              <p class="text-sm text-gray-700 bg-gray-50 rounded-lg p-3 leading-relaxed" x-text="modalAlerta.descricao"></p>
             </div>
 
             <div>
@@ -2208,7 +2208,7 @@
                       class="text-sm border border-gray-300 text-gray-600 px-4 py-2 rounded-lg hover:bg-gray-50">
                 Fechar
               </button>
-              <button x-show="!alertaDetalhe.resolvido" @click="resolverAlerta(alertaDetalhe.id)"
+              <button x-show="!modalAlerta.resolvido" @click="resolverAlerta(modalAlerta.id)"
                       class="text-sm bg-bd text-white font-semibold px-4 py-2 rounded-lg hover:bg-[#004070]">
                 Resolver Alerta
               </button>
@@ -2228,16 +2228,16 @@
        @keydown.escape.window="fecharRemessaModal()">
     <div class="absolute inset-0 bg-black bg-opacity-40" @click="fecharRemessaModal()"></div>
     <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto mx-4">
-      <template x-if="remessaDetalhe">
+      <template x-if="modalRemessa">
         <div>
           <div class="bg-bd px-6 py-5 rounded-t-2xl">
             <div class="flex items-start justify-between">
               <div>
-                <div class="text-white font-bold text-lg leading-tight font-mono" x-text="remessaDetalhe.numero"></div>
+                <div class="text-white font-bold text-lg leading-tight font-mono" x-text="modalRemessa.numero"></div>
                 <div class="flex items-center gap-2 mt-1.5">
-                  <span class="text-blue-300 text-xs" x-text="remessaDetalhe.cliente || '—'"></span>
+                  <span class="text-blue-300 text-xs" x-text="modalRemessa.cliente || '—'"></span>
                   <span class="text-blue-400">·</span>
-                  <span class="text-blue-300 text-xs" x-text="(remessaDetalhe.cidade||'') + '/' + (remessaDetalhe.uf||'')"></span>
+                  <span class="text-blue-300 text-xs" x-text="(modalRemessa.cidade||'') + '/' + (modalRemessa.uf||'')"></span>
                 </div>
               </div>
               <button @click="fecharRemessaModal()" class="text-blue-300 hover:text-white text-2xl leading-none mt-1">×</button>
@@ -2248,42 +2248,42 @@
             <div class="grid grid-cols-3 gap-3 text-sm">
               <div class="bg-gray-50 rounded-lg p-3">
                 <div class="text-xs text-gray-400 mb-1">Status atual</div>
-                <span class="text-xs font-semibold px-2 py-0.5 rounded-full" :class="'status-' + remessaDetalhe.status"
-                      x-text="remessaDetalhe.status?.replace(/_/g,' ')"></span>
+                <span class="text-xs font-semibold px-2 py-0.5 rounded-full" :class="'status-' + modalRemessa.status"
+                      x-text="modalRemessa.status?.replace(/_/g,' ')"></span>
               </div>
               <div class="bg-gray-50 rounded-lg p-3">
                 <div class="text-xs text-gray-400 mb-1">Prioridade</div>
-                <div class="font-semibold text-gray-700" x-text="remessaDetalhe.prioridade"></div>
+                <div class="font-semibold text-gray-700" x-text="modalRemessa.prioridade"></div>
               </div>
               <div class="bg-gray-50 rounded-lg p-3">
                 <div class="text-xs text-gray-400 mb-1">Janela de entrega</div>
-                <div class="font-semibold text-gray-700" x-text="remessaDetalhe.janela || 'Flexível'"></div>
+                <div class="font-semibold text-gray-700" x-text="modalRemessa.janela || 'Flexível'"></div>
               </div>
               <div class="bg-gray-50 rounded-lg p-3">
                 <div class="text-xs text-gray-400 mb-1">Volume</div>
-                <div class="font-semibold text-gray-700" x-text="(remessaDetalhe.volume_m3||0).toFixed(2) + ' m³'"></div>
+                <div class="font-semibold text-gray-700" x-text="(modalRemessa.volume_m3||0).toFixed(2) + ' m³'"></div>
               </div>
               <div class="bg-gray-50 rounded-lg p-3">
                 <div class="text-xs text-gray-400 mb-1">Peso</div>
-                <div class="font-semibold text-gray-700" x-text="(remessaDetalhe.peso_kg||0).toFixed(0) + ' kg'"></div>
+                <div class="font-semibold text-gray-700" x-text="(modalRemessa.peso_kg||0).toFixed(0) + ' kg'"></div>
               </div>
               <div class="bg-gray-50 rounded-lg p-3">
                 <div class="text-xs text-gray-400 mb-1">Valor NF</div>
                 <div class="font-semibold text-gray-700"
-                     x-text="'R$ ' + (remessaDetalhe.valor_nf||0).toLocaleString('pt-BR',{minimumFractionDigits:0})"></div>
+                     x-text="'R$ ' + (modalRemessa.valor_nf||0).toLocaleString('pt-BR',{minimumFractionDigits:0})"></div>
               </div>
             </div>
 
             <div class="grid grid-cols-2 gap-3 text-sm">
               <div class="bg-gray-50 rounded-lg p-3">
                 <div class="text-xs text-gray-400 mb-1">Nota Fiscal</div>
-                <div class="font-semibold" :class="remessaDetalhe.nf_emitida ? 'text-green-600' : 'text-red-500'"
-                     x-text="remessaDetalhe.nf_emitida ? 'Emitida' : 'Pendente'"></div>
+                <div class="font-semibold" :class="modalRemessa.nf_emitida ? 'text-green-600' : 'text-red-500'"
+                     x-text="modalRemessa.nf_emitida ? 'Emitida' : 'Pendente'"></div>
               </div>
               <div class="bg-gray-50 rounded-lg p-3">
                 <div class="text-xs text-gray-400 mb-1">Contrato ATA</div>
                 <div class="font-semibold text-gray-700"
-                     x-text="remessaDetalhe.is_ata ? ('Sim' + (remessaDetalhe.dias_restantes !== null ? ' — ' + remessaDetalhe.dias_restantes + 'd restantes' : '')) : 'Não'"></div>
+                     x-text="modalRemessa.is_ata ? ('Sim' + (modalRemessa.dias_restantes !== null ? ' — ' + modalRemessa.dias_restantes + 'd restantes' : '')) : 'Não'"></div>
               </div>
             </div>
 
@@ -2477,12 +2477,12 @@
       proximosDias: [],
       // Modal de alerta
       alertaModal: false,
-      alertaDetalhe: null,
+      modalAlerta: null,
       alertaHistorico: [],
       alertaHistoricoCarregando: false,
       // Modal de remessa
       remessaModal: false,
-      remessaDetalhe: null,
+      modalRemessa: null,
       remessaHistorico: [],
       remessaHistoricoCarregando: false,
       // Modal de evento de transportadora
@@ -2506,7 +2506,7 @@
       erros: { totais: { duplicatas:0, em_aberto:0, sem_nf:0 }, duplicatas:[], em_aberto:[], sem_nf:[], ultimo_upload: null },
       painelDiagnosticoAba: 'em_aberto',
       // Assistente de Diagnóstico
-      chatAssistenteAberto: false,
+      popupAssistente: false,
       chatContextoModo: 'geral',   // 'geral' (botão flutuante) | 'erro' (? Ajuda por tipo de erro)
       chatAssistenteTipoErro: null,
       chatMensagens: [],
@@ -2673,6 +2673,8 @@
         this.ondasData = this._dataISOLocal(dt);
         this.loadOndas();
       },
+      diaAnterior() { this.mudarDiaOndas(-1); },
+      proximoDia()  { this.mudarDiaOndas(1); },
 
       formatarDiaSemana(iso) {
         const [y, m, d] = iso.split('-').map(Number);
@@ -2824,19 +2826,23 @@
         }
       },
 
+      toggleFTL(id) {
+        this.oportunidadeExpandida = this.oportunidadeExpandida === id ? null : id;
+      },
+
       async resolverAlerta(id) {
         try {
           const res = await fetch(`/api/alertas/${id}/resolver`, { method: 'POST' });
           if (!res.ok) throw new Error('Falha ao resolver alerta');
           this.alertas = this.alertas.filter(a => a.id !== id);
-          if (this.alertaModal && this.alertaDetalhe?.id === id) this.fecharAlertaModal();
+          if (this.alertaModal && this.modalAlerta?.id === id) this.fecharAlertaModal();
           this.loadDashboard();
         } catch(e) { console.error('resolver:', e); }
       },
 
       // ── Modal: Alerta ────────────────────────────────────────────────────
       async abrirAlerta(alerta) {
-        this.alertaDetalhe = alerta;
+        this.modalAlerta = alerta;
         this.alertaModal = true;
         this.alertaHistorico = [];
         if (!alerta.remessa_id) return;
@@ -2850,13 +2856,13 @@
 
       fecharAlertaModal() {
         this.alertaModal = false;
-        this.alertaDetalhe = null;
+        this.modalAlerta = null;
         this.alertaHistorico = [];
       },
 
       // ── Modal: Remessa ───────────────────────────────────────────────────
       async abrirRemessa(remessa) {
-        this.remessaDetalhe = remessa;
+        this.modalRemessa = remessa;
         this.remessaModal = true;
         this.remessaHistorico = [];
         this.remessaHistoricoCarregando = true;
@@ -2869,7 +2875,7 @@
 
       fecharRemessaModal() {
         this.remessaModal = false;
-        this.remessaDetalhe = null;
+        this.modalRemessa = null;
         this.remessaHistorico = [];
       },
 
@@ -3163,12 +3169,12 @@
           }];
           this.chatInputAtual = '';
         }
-        this.chatAssistenteAberto = true;
+        this.popupAssistente = true;
       },
 
       fecharChatAssistente() {
         // Fecha sem apagar o histórico da sessão — reabrir retoma a conversa.
-        this.chatAssistenteAberto = false;
+        this.popupAssistente = false;
       },
 
       async enviarMensagemChat() {
@@ -3294,6 +3300,7 @@
         this.historicoOndasCarregando = false;
       },
 
+      // Chama GET /api/ondas/historico/exportar?periodo=...&formato=xlsx (ou formato=pdf) &cd_codigo=...
       async exportarHistoricoOndas(formato) {
         this.exportandoHistoricoOndas = true;
         try {

@@ -5,6 +5,7 @@
 # Restrição da BD: sem API externa — consulta portais via scraping estruturado
 # ou recebe updates via e-mail/EDI e os normaliza.
 
+import asyncio
 import logging
 import re
 from datetime import datetime, timedelta
@@ -15,6 +16,7 @@ from sqlalchemy import select, and_, func, exists
 from sqlalchemy.orm import selectinload
 
 from core.config import settings
+from core.db import AsyncSessionLocal
 from core.historico import HistoricoService
 from core.models import Alerta, EventoRastreio, Remessa, ProgramacaoColeta, Onda, OndaRemessa
 
@@ -286,65 +288,84 @@ class AgenteMonitor:
     async def dashboard(self, cd_id: int | None = None) -> dict[str, Any]:
         """
         Retorna visão consolidada do dia para o painel de Timóteo e Carlos.
+
+        As 4 agregações abaixo são independentes entre si (nenhuma depende do
+        resultado de outra) e só leem dados — por isso rodam em sessões próprias,
+        concorrentes via asyncio.gather, em vez de usar self.db sequencialmente.
+        Contra um Postgres remoto (Supabase), cada round-trip de rede paga a
+        mesma latência fixa; paralelizar transforma 4x essa latência em 1x.
         """
         filtro = [True]
         if cd_id:
             filtro.append(Remessa.cd_id == cd_id)
 
-        contagens = {}
-        for status in ["novo", "planejado", "coletado", "em_transito",
-                       "em_rota_entrega", "entregue", "tentativa", "devolvido"]:
-            res = await self.db.execute(
-                select(func.count(Remessa.id)).where(
-                    and_(Remessa.status == status, *filtro)
-                )
-            )
-            contagens[status] = res.scalar() or 0
-
-        # Alertas não resolvidos por severidade
-        filtro_alertas = [True]
+        filtro_alertas = [Alerta.resolvido == False]
         if cd_id:
             filtro_alertas.append(Alerta.cd_id == cd_id)
-
-        alertas = {}
-        for sev in ["critica", "alta", "media", "baixa"]:
-            res = await self.db.execute(
-                select(func.count(Alerta.id)).where(
-                    and_(
-                        Alerta.severidade == sev,
-                        Alerta.resolvido  == False,
-                        *filtro_alertas,
-                    )
-                )
-            )
-            alertas[sev] = res.scalar() or 0
-
-        # OTIF do dia (entregues / (entregues + tentativa + devolvido))
-        total_fin = contagens["entregue"] + contagens["tentativa"] + contagens["devolvido"]
-        otif = (contagens["entregue"] / total_fin * 100) if total_fin > 0 else 0.0
 
         # Pendentes: status 'novo' que nunca foi agrupado em nenhuma onda
         # (mesma definição usada em /api/admin/reprocessar-historico).
         tem_onda = exists().where(OndaRemessa.remessa_id == Remessa.id)
-        res_pendentes = await self.db.execute(
-            select(func.count(Remessa.id)).where(
-                and_(Remessa.status == "novo", ~tem_onda, *filtro)
-            )
-        )
-        pendentes = res_pendentes.scalar() or 0
 
-        # Sem NF: nf_emitida=False e ainda ativa (mesma definição do
-        # Painel de Diagnóstico — só exclui os estados finais).
-        res_sem_nf = await self.db.execute(
-            select(func.count(Remessa.id)).where(
-                and_(
-                    Remessa.nf_emitida == False,
-                    Remessa.status.not_in(["entregue", "devolvido"]),
-                    *filtro,
+        async def _contagem_status() -> dict[str, int]:
+            async with AsyncSessionLocal() as s:
+                res = await s.execute(
+                    select(Remessa.status, func.count(Remessa.id))
+                    .where(and_(*filtro))
+                    .group_by(Remessa.status)
                 )
-            )
+                return dict(res.all())
+
+        async def _contagem_alertas() -> dict[str, int]:
+            async with AsyncSessionLocal() as s:
+                res = await s.execute(
+                    select(Alerta.severidade, func.count(Alerta.id))
+                    .where(and_(*filtro_alertas))
+                    .group_by(Alerta.severidade)
+                )
+                return dict(res.all())
+
+        async def _pendentes() -> int:
+            async with AsyncSessionLocal() as s:
+                res = await s.execute(
+                    select(func.count(Remessa.id)).where(
+                        and_(Remessa.status == "novo", ~tem_onda, *filtro)
+                    )
+                )
+                return res.scalar() or 0
+
+        async def _sem_nf() -> int:
+            # Sem NF: nf_emitida=False e ainda ativa (mesma definição do
+            # Painel de Diagnóstico — só exclui os estados finais).
+            async with AsyncSessionLocal() as s:
+                res = await s.execute(
+                    select(func.count(Remessa.id)).where(
+                        and_(
+                            Remessa.nf_emitida == False,
+                            Remessa.status.not_in(["entregue", "devolvido"]),
+                            *filtro,
+                        )
+                    )
+                )
+                return res.scalar() or 0
+
+        contagens_raw, alertas_raw, pendentes, sem_nf = await asyncio.gather(
+            _contagem_status(), _contagem_alertas(), _pendentes(), _sem_nf()
         )
-        sem_nf = res_sem_nf.scalar() or 0
+
+        contagens = {
+            status: contagens_raw.get(status, 0)
+            for status in ["novo", "planejado", "coletado", "em_transito",
+                           "em_rota_entrega", "entregue", "tentativa", "devolvido"]
+        }
+        alertas = {
+            sev: alertas_raw.get(sev, 0)
+            for sev in ["critica", "alta", "media", "baixa"]
+        }
+
+        # OTIF do dia (entregues / (entregues + tentativa + devolvido))
+        total_fin = contagens["entregue"] + contagens["tentativa"] + contagens["devolvido"]
+        otif = (contagens["entregue"] / total_fin * 100) if total_fin > 0 else 0.0
 
         return {
             "remessas":      contagens,

@@ -30,6 +30,23 @@ INDEXES = [
     ("idx_historico_timestamp",       "CREATE INDEX IF NOT EXISTS idx_historico_timestamp ON historico_eventos(timestamp)"),
     ("idx_historico_tipo",            "CREATE INDEX IF NOT EXISTS idx_historico_tipo ON historico_eventos(tipo_evento)"),
     ("idx_historico_transportadora",  "CREATE INDEX IF NOT EXISTS idx_historico_transportadora ON historico_eventos(transportadora_id, timestamp)"),
+    # Adicionados após o stress test de 2026-07-09 — corrigem N+1 em
+    # /api/ondas/historico e /api/transportadoras/estatisticas.
+    ("idx_planos_data",               "CREATE INDEX IF NOT EXISTS idx_planos_data ON planos_dia(data_plano)"),
+    ("idx_planos_cd",                 "CREATE INDEX IF NOT EXISTS idx_planos_cd ON planos_dia(cd_id)"),
+    ("idx_ondas_plano",               "CREATE INDEX IF NOT EXISTS idx_ondas_plano ON ondas(plano_id)"),
+    ("idx_ondas_transportadora",      "CREATE INDEX IF NOT EXISTS idx_ondas_transportadora ON ondas(transportadora_id)"),
+    ("idx_programacoes_transportadora", "CREATE INDEX IF NOT EXISTS idx_programacoes_transportadora ON programacoes_coleta(transportadora_id)"),
+    ("idx_alertas_severidade",        "CREATE INDEX IF NOT EXISTS idx_alertas_severidade ON alertas(severidade)"),
+    ("idx_alertas_resolvido",         "CREATE INDEX IF NOT EXISTS idx_alertas_resolvido ON alertas(resolvido)"),
+    ("idx_alertas_cd",                "CREATE INDEX IF NOT EXISTS idx_alertas_cd ON alertas(cd_id)"),
+    # Composto para as combinações de filtro mais comuns em /api/remessas
+    # (cd_id + status + data são os 3 filtros mais usados juntos no painel).
+    ("idx_remessas_cd_status_data",   "CREATE INDEX IF NOT EXISTS idx_remessas_cd_status_data ON remessas(cd_id, status, data_extracao DESC)"),
+    # Fix real do T02 (GET /api/remessas?limit=100, sem filtro): EXPLAIN ANALYZE
+    # mostrou Seq Scan + sort completo das 27k linhas por não haver índice que
+    # sustente o ORDER BY (prioridade, janela_inicio) usado por padrão na listagem.
+    ("idx_remessas_prioridade_janela", "CREATE INDEX IF NOT EXISTS idx_remessas_prioridade_janela ON remessas(prioridade, janela_inicio)"),
 ]
 
 

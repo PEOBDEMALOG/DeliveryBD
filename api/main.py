@@ -18,12 +18,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
-from sqlalchemy import select, and_, func, event, update, exists
-from sqlalchemy.orm import selectinload
-from sqlalchemy.pool import NullPool
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, and_, func, update, exists
+from sqlalchemy.orm import selectinload, joinedload
 
-from core.config import settings, IS_VERCEL, DB_CONNECT_ARGS
+from core.config import settings, IS_VERCEL
+from core.cache import get_cached, set_cached
 from core.models import (
     Base, Alerta, Remessa, PlanoDia, Onda, OndaRemessa,
     OportunidadeConsolidacao, CentroDistribuicao,
@@ -103,33 +103,9 @@ async def exigir_jwt(request: Request, call_next):
     return await call_next(request)
 
 # ── Banco ─────────────────────────────────────────────────────────────────────
-
-_engine_kwargs: dict = {"echo": False}
-if "postgresql" in settings.DATABASE_URL:
-    # NullPool: sem pool no lado da aplicação — correto para Vercel serverless,
-    # que já não mantém estado entre requests (o Supabase Transaction Pooler faz
-    # a multiplexação de conexões do lado dele).
-    _engine_kwargs["poolclass"] = NullPool
-    _engine_kwargs["connect_args"] = DB_CONNECT_ARGS
-
-engine            = create_async_engine(settings.DATABASE_URL, **_engine_kwargs)
-AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
-
-# Supabase Transaction Pooler (pgbouncer): a prevenção real contra prepared
-# statements duplicados/inválidos está toda em DB_CONNECT_ARGS (ssl,
-# statement_cache_size=0, prepared_statement_name_func) e em
-# "?prepared_statement_cache_size=0" na DATABASE_URL — ver core/config.py.
-# Este listener usa só a API pública de eventos do SQLAlchemy (sem tocar em
-# internals do dialect, que variam entre versões do _vendor do Vercel).
-if "supabase" in settings.DATABASE_URL:
-    @event.listens_for(engine.sync_engine, "connect")
-    def _on_connect(dbapi_connection, connection_record):
-        pass
-
-
-async def get_db() -> AsyncSession:
-    async with AsyncSessionLocal() as session:
-        yield session
+# Engine/sessionmaker/get_db vivem em core/db.py (compartilhado com agents/ para
+# permitir sessões concorrentes extras em leituras paralelizáveis).
+from core.db import engine, AsyncSessionLocal, get_db  # noqa: E402
 
 
 async def get_orq(db: AsyncSession = Depends(get_db)) -> Orquestrador:
@@ -559,26 +535,66 @@ async def _coletar_historico_ondas(
         .order_by(PlanoDia.data_plano.desc(), PlanoDia.cd_id)
     )
     planos = res_planos.scalars().all()
+    if not planos:
+        return []
+
+    plano_ids = [p.id for p in planos]
+
+    # Todas as ondas de todos os planos do período, numa única ida ao banco.
+    res_ondas = await db.execute(
+        select(Onda)
+        .options(selectinload(Onda.transportadora))
+        .where(Onda.plano_id.in_(plano_ids))
+        .order_by(Onda.numero_onda)
+    )
+    ondas_por_plano: dict[int, list[Onda]] = {}
+    onda_ids: list[int] = []
+    for o in res_ondas.scalars().all():
+        ondas_por_plano.setdefault(o.plano_id, []).append(o)
+        onda_ids.append(o.id)
+
+    # Contagem de remessas por onda, agregada de uma vez (era 1 query por onda).
+    #
+    # Nota: cheguei a rodar esta query e a de OTIF abaixo em paralelo (sessões
+    # concorrentes), já que são independentes entre si. Revertido — medido contra
+    # este Supabase, para o período "ano" (muitos onda_ids/plano_ids de uma vez)
+    # rodar as duas ao mesmo tempo gerou contenção no lado do banco e picos de
+    # até 69s, pior que as duas em série (~6s). Mantido sequencial aqui;
+    # dashboard() usa paralelismo porque lá as agregações são baratas (poucas
+    # linhas, índice direto), sem esse efeito.
+    contagem_por_onda: dict[int, int] = {}
+    if onda_ids:
+        res_counts = await db.execute(
+            select(OndaRemessa.onda_id, func.count(OndaRemessa.remessa_id))
+            .where(OndaRemessa.onda_id.in_(onda_ids))
+            .group_by(OndaRemessa.onda_id)
+        )
+        contagem_por_onda = dict(res_counts.all())
+
+    # OTIF por plano (entregues/tentativas/devolvidos), agregado de uma vez
+    # (era 1 query por plano) — agrupado por plano_id + status.
+    otif_por_plano: dict[int, dict[str, int]] = {}
+    if onda_ids:
+        res_otif = await db.execute(
+            select(Onda.plano_id, Remessa.status, func.count(Remessa.id))
+            .join(OndaRemessa, OndaRemessa.remessa_id == Remessa.id)
+            .join(Onda, Onda.id == OndaRemessa.onda_id)
+            .where(Onda.plano_id.in_(plano_ids))
+            .group_by(Onda.plano_id, Remessa.status)
+        )
+        for plano_id, status, qtd in res_otif.all():
+            otif_por_plano.setdefault(plano_id, {})[status] = qtd
 
     resultado = []
     for plano in planos:
-        res_ondas = await db.execute(
-            select(Onda)
-            .options(selectinload(Onda.transportadora))
-            .where(Onda.plano_id == plano.id)
-            .order_by(Onda.numero_onda)
-        )
-        ondas = res_ondas.scalars().all()
+        ondas = ondas_por_plano.get(plano.id, [])
         if not ondas:
             continue
 
         ondas_out = []
         total_remessas_plano = 0
         for o in ondas:
-            res_count = await db.execute(
-                select(func.count(OndaRemessa.remessa_id)).where(OndaRemessa.onda_id == o.id)
-            )
-            total_rem = res_count.scalar() or 0
+            total_rem = contagem_por_onda.get(o.id, 0)
             total_remessas_plano += total_rem
             ondas_out.append({
                 "id":             o.id,
@@ -592,14 +608,7 @@ async def _coletar_historico_ondas(
 
         # OTIF do plano: entregues / (entregues + tentativas + devolvidos) entre as
         # remessas de todas as ondas deste plano.
-        res_otif = await db.execute(
-            select(Remessa.status, func.count(Remessa.id))
-            .join(OndaRemessa, OndaRemessa.remessa_id == Remessa.id)
-            .join(Onda, Onda.id == OndaRemessa.onda_id)
-            .where(Onda.plano_id == plano.id)
-            .group_by(Remessa.status)
-        )
-        contagem_status = {status: qtd for status, qtd in res_otif.all()}
+        contagem_status = otif_por_plano.get(plano.id, {})
         entregues  = contagem_status.get("entregue", 0)
         tentativas = contagem_status.get("tentativa", 0)
         devolvidos = contagem_status.get("devolvido", 0)
@@ -637,6 +646,18 @@ async def historico_ondas(
     cd_codigo: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
 ):
+    # Cache de 120s: só vale a pena para períodos largos (mes/trimestre/semestre/
+    # ano), que são os que pesam de verdade — "hoje"/"ontem" são baratos e mudam
+    # o dia todo, então seguem sempre ao vivo (sem cache).
+    if periodo not in ("hoje", "ontem"):
+        cache_key = f"ondas_historico:{periodo}:{cd_codigo or 'todos'}"
+        cached = get_cached(cache_key, ttl_seconds=120)
+        if cached is not None:
+            return cached
+        resultado = await _coletar_historico_ondas(periodo, cd_codigo, db)
+        set_cached(cache_key, resultado)
+        return resultado
+
     return await _coletar_historico_ondas(periodo, cd_codigo, db)
 
 
@@ -1184,7 +1205,12 @@ async def listar_remessas(
 
     query = (
         select(Remessa)
-        .options(selectinload(Remessa.cliente))
+        # joinedload (não selectinload) aqui de propósito: Remessa.cliente é
+        # many-to-one (1 cliente por remessa) — o LEFT JOIN não duplica linhas
+        # de Remessa, então é seguro e colapsa 2 round-trips de rede (query base
+        # + query separada do selectinload) em 1 só. Contra o Postgres remoto
+        # (Supabase), isso é metade da latência fixa por request.
+        .options(joinedload(Remessa.cliente))
         .order_by(Remessa.prioridade, Remessa.janela_inicio)
     )
     if transportadora_id == 0:
@@ -2016,6 +2042,11 @@ async def atualizar_meta_otif(
 
 @app.get("/api/transportadoras/estatisticas", summary="Performance das transportadoras via histórico")
 async def get_estatisticas_transportadoras(db: AsyncSession = Depends(get_db)):
+    cache_key = "transportadoras_estatisticas"
+    cached = get_cached(cache_key, ttl_seconds=120)
+    if cached is not None:
+        return cached
+
     res_t = await db.execute(
         select(Transportadora).where(Transportadora.ativo == True).order_by(Transportadora.nome)
     )
@@ -2030,68 +2061,107 @@ async def get_estatisticas_transportadoras(db: AsyncSession = Depends(get_db)):
             proximos_dias.append(cursor)
         cursor += timedelta(days=1)
 
-    resultado = []
-    for t in transportadoras:
+    transportadora_ids = [t.id for t in transportadoras]
+
+    coletas_por_transp: dict[int, list[dict]] = {}
+    programacoes_por_transp: dict[int, int] = {}
+    erros_por_transp: dict[int, int] = {}
+    progs_por_transp: dict[int, list[ProgramacaoColeta]] = {}
+    otif_por_transp: dict[int, dict[str, int]] = {}
+
+    # As 5 agregações abaixo são independentes entre si (era 1 query POR
+    # transportadora antes, 5N no total — agora 5 fixas, batched por IN(...)).
+    #
+    # Nota: cheguei a rodar as 5 em paralelo (sessões concorrentes via
+    # asyncio.gather). Revertido — mediu-se contra este Supabase (conexão
+    # direta, max_connections=60) resultados inconsistentes (~4-9s, variando
+    # run a run) em vez do ganho esperado, provavelmente por contenção do lado
+    # do banco. Mantido sequencial; ver mesma nota em _coletar_historico_ondas.
+    if transportadora_ids:
         res_coletas = await db.execute(
             select(Onda, PlanoDia.data_plano, CentroDistribuicao.codigo)
             .join(PlanoDia, Onda.plano_id == PlanoDia.id)
             .join(CentroDistribuicao, PlanoDia.cd_id == CentroDistribuicao.id)
             .where(
-                Onda.transportadora_id == t.id,
+                Onda.transportadora_id.in_(transportadora_ids),
                 Onda.status == "planejada",
                 PlanoDia.data_plano.in_(proximos_dias),
             )
             .order_by(PlanoDia.data_plano, Onda.numero_onda)
         )
-        proximas_coletas = [
-            {
+        for onda, data_plano, cd_codigo in res_coletas.all():
+            coletas_por_transp.setdefault(onda.transportadora_id, []).append({
                 "onda_id":        onda.id,
                 "nome":           onda.nome,
                 "cd":             cd_codigo,
                 "data":           str(data_plano),
                 "horario_coleta": onda.horario_coleta.strftime("%Hh%M") if onda.horario_coleta else None,
                 "volume_m3":      float(onda.volume_total_m3 or 0),
-            }
-            for onda, data_plano, cd_codigo in res_coletas.all()
-        ]
+            })
 
-        # Total de programações enviadas pelo Comunicador
         res_prog = await db.execute(
-            select(func.count(HistoricoEventos.id)).where(
+            select(HistoricoEventos.transportadora_id, func.count(HistoricoEventos.id))
+            .where(
                 and_(
-                    HistoricoEventos.transportadora_id == t.id,
+                    HistoricoEventos.transportadora_id.in_(transportadora_ids),
                     HistoricoEventos.tipo_evento       == "decisao_agente",
                     HistoricoEventos.origem            == "comunicador",
                 )
             )
+            .group_by(HistoricoEventos.transportadora_id)
         )
-        total_programacoes = res_prog.scalar() or 0
+        programacoes_por_transp = dict(res_prog.all())
 
-        # Total de erros associados a esta transportadora
         res_erros = await db.execute(
-            select(func.count(HistoricoEventos.id)).where(
+            select(HistoricoEventos.transportadora_id, func.count(HistoricoEventos.id))
+            .where(
                 and_(
-                    HistoricoEventos.transportadora_id == t.id,
+                    HistoricoEventos.transportadora_id.in_(transportadora_ids),
                     HistoricoEventos.tipo_evento       == "erro_sistema",
                 )
             )
+            .group_by(HistoricoEventos.transportadora_id)
         )
-        total_erros = res_erros.scalar() or 0
+        erros_por_transp = dict(res_erros.all())
+
+        res_progs = await db.execute(
+            select(ProgramacaoColeta).where(
+                and_(
+                    ProgramacaoColeta.transportadora_id.in_(transportadora_ids),
+                    ProgramacaoColeta.confirmado_em.isnot(None),
+                    ProgramacaoColeta.enviado_em.isnot(None),
+                )
+            ).order_by(ProgramacaoColeta.id)
+        )
+        for p in res_progs.scalars().all():
+            bucket = progs_por_transp.setdefault(p.transportadora_id, [])
+            if len(bucket) < 50:
+                bucket.append(p)
+
+        res_otif = await db.execute(
+            select(Onda.transportadora_id, Remessa.status, func.count(Remessa.id))
+            .join(OndaRemessa, OndaRemessa.remessa_id == Remessa.id)
+            .join(Onda, Onda.id == OndaRemessa.onda_id)
+            .where(
+                Onda.transportadora_id.in_(transportadora_ids),
+                Remessa.status.in_(["entregue", "tentativa", "devolvido"]),
+            )
+            .group_by(Onda.transportadora_id, Remessa.status)
+        )
+        for transp_id, status, qtd in res_otif.all():
+            otif_por_transp.setdefault(transp_id, {})[status] = qtd
+
+    resultado = []
+    for t in transportadoras:
+        proximas_coletas = coletas_por_transp.get(t.id, [])
+
+        total_programacoes = programacoes_por_transp.get(t.id, 0)
+        total_erros        = erros_por_transp.get(t.id, 0)
 
         total_ops  = total_programacoes + total_erros
         taxa_falha = round(total_erros / total_ops * 100, 1) if total_ops > 0 else 0.0
 
-        # Tempo médio de resposta via ProgramacaoColeta
-        res_progs = await db.execute(
-            select(ProgramacaoColeta).where(
-                and_(
-                    ProgramacaoColeta.transportadora_id == t.id,
-                    ProgramacaoColeta.confirmado_em.isnot(None),
-                    ProgramacaoColeta.enviado_em.isnot(None),
-                )
-            ).limit(50)
-        )
-        progs = res_progs.scalars().all()
+        progs = progs_por_transp.get(t.id, [])
         deltas = [
             (p.confirmado_em - p.enviado_em).total_seconds() / 3600
             for p in progs
@@ -2099,19 +2169,7 @@ async def get_estatisticas_transportadoras(db: AsyncSession = Depends(get_db)):
         ]
         tempo_medio_h = round(sum(deltas) / len(deltas), 1) if deltas else None
 
-        # OTIF da transportadora: remessas entregues / (entregues + tentativa + devolvido)
-        # nas ondas atribuídas a ela (Remessa não tem transportadora_id direto — só via Onda).
-        res_otif = await db.execute(
-            select(Remessa.status, func.count(Remessa.id))
-            .join(OndaRemessa, OndaRemessa.remessa_id == Remessa.id)
-            .join(Onda, Onda.id == OndaRemessa.onda_id)
-            .where(
-                Onda.transportadora_id == t.id,
-                Remessa.status.in_(["entregue", "tentativa", "devolvido"]),
-            )
-            .group_by(Remessa.status)
-        )
-        contagens_otif = {status: qtd for status, qtd in res_otif.all()}
+        contagens_otif = otif_por_transp.get(t.id, {})
         total_fin = sum(contagens_otif.values())
         otif_atual = (
             round(contagens_otif.get("entregue", 0) / total_fin * 100, 1)
@@ -2137,6 +2195,7 @@ async def get_estatisticas_transportadoras(db: AsyncSession = Depends(get_db)):
             "proximas_coletas":        proximas_coletas,
         })
 
+    set_cached(cache_key, resultado)
     return resultado
 
 

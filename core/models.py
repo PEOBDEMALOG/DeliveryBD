@@ -175,8 +175,8 @@ class PlanoDia(Base):
     __tablename__ = "planos_dia"
 
     id              = Column(Integer, primary_key=True)
-    cd_id           = Column(Integer, ForeignKey("centros_distribuicao.id"))
-    data_plano      = Column(Date, nullable=False)
+    cd_id           = Column(Integer, ForeignKey("centros_distribuicao.id"), index=True)
+    data_plano      = Column(Date, nullable=False, index=True)
     ciclo           = Column(Integer, default=1)
     status          = Column(String(20), default="rascunho")
     criado_por      = Column(String(100))
@@ -197,13 +197,13 @@ class Onda(Base):
     __tablename__ = "ondas"
 
     id                = Column(Integer, primary_key=True)
-    plano_id          = Column(Integer, ForeignKey("planos_dia.id"))
+    plano_id          = Column(Integer, ForeignKey("planos_dia.id"), index=True)
     numero_onda       = Column(Integer, nullable=False)
     nome              = Column(String(100))
     regiao            = Column(String(50))
     tipo              = Column(String(20))
     veiculo_id        = Column(Integer, ForeignKey("veiculos.id"))
-    transportadora_id = Column(Integer, ForeignKey("transportadoras.id"))
+    transportadora_id = Column(Integer, ForeignKey("transportadoras.id"), index=True)
     volume_total_m3   = Column(Numeric(6, 2))
     peso_total_kg     = Column(Numeric(8, 2))
     valor_total_nf    = Column(Numeric(12, 2))
@@ -236,7 +236,7 @@ class ProgramacaoColeta(Base):
 
     id                  = Column(Integer, primary_key=True)
     onda_id             = Column(Integer, ForeignKey("ondas.id"))
-    transportadora_id   = Column(Integer, ForeignKey("transportadoras.id"))
+    transportadora_id   = Column(Integer, ForeignKey("transportadoras.id"), index=True)
     canal               = Column(String(20), default="email")
     destinatario_email  = Column(String(200))
     assunto             = Column(String(300))
@@ -275,13 +275,13 @@ class Alerta(Base):
 
     id              = Column(Integer, primary_key=True)
     tipo            = Column(String(50), nullable=False)
-    severidade      = Column(String(20), default="media")
+    severidade      = Column(String(20), default="media", index=True)
     titulo          = Column(String(200))
     descricao       = Column(Text)
     remessa_id      = Column(Integer, ForeignKey("remessas.id"))
     cliente_id      = Column(Integer, ForeignKey("clientes.id"))
-    cd_id           = Column(Integer, ForeignKey("centros_distribuicao.id"))
-    resolvido       = Column(Boolean, default=False)
+    cd_id           = Column(Integer, ForeignKey("centros_distribuicao.id"), index=True)
+    resolvido       = Column(Boolean, default=False, index=True)
     resolvido_em    = Column(DateTime)
     criado_em       = Column(DateTime, default=datetime.utcnow)
 

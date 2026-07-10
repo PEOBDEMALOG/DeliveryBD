@@ -20,7 +20,7 @@ sys.path.insert(0, str(ROOT))
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlalchemy import select
 
-from core.config import settings
+from core.config import settings, DB_CONNECT_ARGS
 from core.models import ErroAcao, TipoErro
 
 # (tipo_erro_codigo, acao, max_tentativas, intervalo_retry_segundos)
@@ -43,7 +43,10 @@ MAPEAMENTO = [
 
 
 async def seed():
-    engine = create_async_engine(settings.DATABASE_URL, echo=False)
+    engine_kwargs = {"echo": False}
+    if "postgresql" in settings.DATABASE_URL:
+        engine_kwargs["connect_args"] = DB_CONNECT_ARGS
+    engine = create_async_engine(settings.DATABASE_URL, **engine_kwargs)
     SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
     async with SessionLocal() as db:

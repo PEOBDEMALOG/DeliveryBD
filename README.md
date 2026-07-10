@@ -87,8 +87,11 @@ pip install -r requirements.txt
 Copie `.env.example` para `.env` e preencha pelo menos:
 ```env
 DATABASE_URL=postgresql://postgres:SENHA@db.SEU_PROJETO.supabase.co:5432/postgres
-JWT_SECRET=troque-isso-em-producao
+JWT_SECRET=gere_com_openssl_rand_-hex_32
 ```
+`JWT_SECRET` é obrigatório — a aplicação falha ao subir sem ele (`core/config.py`).
+Gere um valor único por ambiente (`openssl rand -hex 32`); nunca reaproveite
+entre dev/teste/produção.
 (SMTP, Resend e ANTHROPIC_API_KEY são opcionais — sem eles o envio de e-mail
 roda em modo sem efeito e o Assistente de Diagnóstico fica desabilitado.)
 
@@ -118,19 +121,14 @@ uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
 
 Toda rota `/api/*` exige um JWT (Bearer token), exceto `/api/auth/login`,
 `/api/ping` e o cron do Resolvedor (`/api/resolvedor/executar`, protegido por
-`CRON_SECRET` em vez de login). Usuários de demonstração
-(`core/auth.py`):
-
-| Usuário   | Senha         | CD      | Papel     |
-|-----------|---------------|---------|-----------|
-| `timoteo` | `***REDACTED***`  | OSA     | operador  |
-| `carlos`  | `***REDACTED***`  | ITJ     | operador  |
-| `erick`   | `***REDACTED***`  | (todos) | admin     |
+`CRON_SECRET` em vez de login). Usuários de demonstração e suas senhas estão
+definidos em `core/auth.py` — credenciais não ficam no README; peça ao
+responsável do projeto ou consulte esse arquivo diretamente.
 
 ```bash
 curl -X POST http://localhost:8000/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"usuario":"erick","senha":"***REDACTED***"}'
+  -d '{"usuario":"<usuario>","senha":"<senha>"}'
 # → {"token": "...", ...}  — use como "Authorization: Bearer <token>" nas demais chamadas
 ```
 

@@ -96,7 +96,17 @@ class Settings:
     CRON_SECRET: str = os.getenv("CRON_SECRET", "dev-secret")
 
     # ── Autenticação JWT ──────────────────────────────────────
-    JWT_SECRET: str = os.getenv("JWT_SECRET", "peo-bd-demo-secret-2026")
+    # Sem fallback hardcoded de propósito: um valor default aqui ficaria
+    # exposto no código-fonte e serviria pra assinar tokens válidos se a env
+    # var real nunca fosse configurada. Falha explícita é melhor que uma app
+    # rodando silenciosamente com um segredo público conhecido.
+    _jwt_secret_env = os.getenv("JWT_SECRET")
+    if not _jwt_secret_env:
+        raise RuntimeError(
+            "JWT_SECRET não configurado — defina a variável de ambiente "
+            "antes de subir a aplicação."
+        )
+    JWT_SECRET: str = _jwt_secret_env
 
     # ── Regras de negócio BD ────────────────────────────────
     DIAS_ESPERA_FTL:         int   = 5

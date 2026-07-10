@@ -172,7 +172,19 @@ class ServidorTeste:
     def _env(self) -> dict:
         env = os.environ.copy()
         env["DATABASE_URL"] = f"sqlite+aiosqlite:///{self.db_path.as_posix()}"
-        env.setdefault("JWT_SECRET", "peo-bd-demo-secret-2026")
+        # SOMENTE TESTE LOCAL, NUNCA USAR EM DEPLOY — valor fixo só pra essa
+        # suíte conseguir assinar/validar tokens contra o SQLite isolado
+        # acima; não é (e não deve virar) o segredo real de nenhum ambiente.
+        env.setdefault("JWT_SECRET", "SOMENTE-TESTE-LOCAL-NUNCA-USAR-EM-DEPLOY")
+        # Trava de segurança: essa suíte só pode rodar contra o SQLite
+        # isolado que ela mesma cria acima — nunca contra um Postgres real
+        # (dev, teste ou produção). Se algo sobrescrever DATABASE_URL depois
+        # daqui, prefira quebrar alto a rodar os cenários offline (que
+        # derrubam/sobem o servidor e mexem em dados) contra um banco real.
+        assert env["DATABASE_URL"].startswith("sqlite"), (
+            "testar_offline.py só pode rodar contra SQLite isolado — "
+            f"DATABASE_URL atual: {env['DATABASE_URL']!r}"
+        )
         return env
 
     def iniciar(self):

@@ -93,6 +93,18 @@ MAPA_COLUNAS_UPS = {
     "Valor":           "valor_nf",
 }
 
+# ── Detecção de schema pelo conteúdo real do arquivo ──────────────────────────
+# Colunas exclusivas de cada origem (não aparecem no mapa da outra) — usadas
+# para identificar o formato real do arquivo, em vez de confiar no nome do
+# arquivo ou no CD selecionado. "NF" e "Valor NF" existem nos dois mapas e por
+# isso não servem como assinatura.
+COLUNAS_ASSINATURA_SAP = {"Remessa", "Cliente", "Cidade", "Num.Empenho", "Prazo.Empenho"}
+COLUNAS_ASSINATURA_UPS = {"ID_UPS", "Destinatário", "UF", "Serviço", "Prazo SLA"}
+
+# Cada CD só recebe arquivos de uma origem — usado para validar a seleção
+# manual do usuário contra o schema detectado no arquivo.
+ORIGEM_ESPERADA_POR_CD = {"OSA": "SAP", "ITJ": "UPS_WMS"}
+
 
 class AgenteIngestor:
     """
@@ -119,7 +131,7 @@ class AgenteIngestor:
         arquivo_path: Path,
         cd_codigo: str,           # 'OSA' ou 'ITJ'
         usuario: str,
-        origem: str | None = None  # 'SAP' | 'UPS_WMS' | None (auto-detect)
+        origem: str | None = None  # 'SAP' | 'UPS_WMS' | None (auto-detect pelo conteúdo)
     ) -> dict[str, Any]:
 
         logger.info(f"[Ingestor] Iniciando processamento: {arquivo_path.name}")
@@ -129,12 +141,42 @@ class AgenteIngestor:
         if not cd:
             raise ValueError(f"CD não encontrado: {cd_codigo}")
 
-        # 2. Auto-detecta origem se não informada
-        if not origem:
-            origem = self._detectar_origem(arquivo_path, cd_codigo)
-        logger.info(f"[Ingestor] Origem detectada: {origem}")
+        # 2. Lê o arquivo e valida o schema ANTES de criar qualquer registro —
+        #    se o conteúdo não bater com o CD selecionado, o upload é
+        #    rejeitado sem deixar rastro no banco. O nome do arquivo NUNCA
+        #    decide isso aqui — é usado só como sugestão de preenchimento do
+        #    seletor manual no frontend.
+        df = self._ler_arquivo(arquivo_path)
 
-        # 3. Cria registro de upload
+        schema_detectado = self._detectar_schema_arquivo(df)
+        origem_esperada   = ORIGEM_ESPERADA_POR_CD.get(cd_codigo)
+
+        if schema_detectado is None:
+            raise ValueError(
+                f"Não foi possível identificar o formato do arquivo '{arquivo_path.name}' — "
+                f"as colunas encontradas não correspondem ao schema SAP nem ao UPS WMS. "
+                f"Verifique se é uma exportação válida."
+            )
+
+        if origem_esperada and schema_detectado != origem_esperada:
+            raise ValueError(
+                f"Incompatibilidade entre CD selecionado e arquivo: '{arquivo_path.name}' "
+                f"tem colunas do formato {schema_detectado}, mas o CD {cd_codigo} espera "
+                f"arquivos no formato {origem_esperada}. Verifique o CD selecionado ou o "
+                f"arquivo enviado."
+            )
+
+        if not origem:
+            origem = schema_detectado
+        elif origem != schema_detectado:
+            raise ValueError(
+                f"Origem informada ({origem}) não corresponde ao schema real do arquivo "
+                f"'{arquivo_path.name}' (detectado como {schema_detectado})."
+            )
+
+        logger.info(f"[Ingestor] Schema detectado pelo conteúdo do arquivo: {schema_detectado}")
+
+        # 3. Só agora cria o registro de upload — já validado.
         upload = Upload(
             cd_id        = cd.id,
             usuario      = usuario,
@@ -145,15 +187,6 @@ class AgenteIngestor:
         )
         self.db.add(upload)
         await self.db.flush()
-
-        # 4. Lê arquivo
-        try:
-            df = self._ler_arquivo(arquivo_path)
-        except Exception as e:
-            upload.status    = "erro"
-            upload.log_erros = json.dumps([{"linha": 0, "erro": str(e)}])
-            await self.db.commit()
-            raise
 
         upload.total_linhas = len(df)
 
@@ -242,11 +275,18 @@ class AgenteIngestor:
 
     # ── Helpers internos ──────────────────────────────────────────────────────
 
-    def _detectar_origem(self, arquivo: Path, cd_codigo: str) -> str:
-        nome = arquivo.name.upper()
-        if "UPS" in nome or cd_codigo == "ITJ":
-            return "UPS_WMS"
-        return "SAP"
+    def _detectar_schema_arquivo(self, df: pd.DataFrame) -> str | None:
+        """
+        Identifica o schema real do arquivo pelas colunas presentes — nunca
+        pelo nome do arquivo. Retorna None se as colunas não baterem com
+        nenhum dos dois schemas conhecidos.
+        """
+        cols = set(df.columns)
+        sap_match = len(cols & COLUNAS_ASSINATURA_SAP)
+        ups_match = len(cols & COLUNAS_ASSINATURA_UPS)
+        if sap_match == 0 and ups_match == 0:
+            return None
+        return "SAP" if sap_match >= ups_match else "UPS_WMS"
 
     def _ler_arquivo(self, path: Path) -> pd.DataFrame:
         ext = path.suffix.lower()

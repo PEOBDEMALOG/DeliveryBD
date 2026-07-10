@@ -581,6 +581,7 @@
                 <div>
                   <label class="block text-xs font-medium text-gray-600 mb-1">Centro de Distribuição</label>
                   <select x-model="uploadForm.cd"
+                          @change="uploadForm.cdTocadoManualmente = true"
                           class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 ring-bd">
                     <option value="OSA">Osasco — SAP</option>
                     <option value="ITJ">Itajaí — UPS WMS</option>
@@ -589,6 +590,7 @@
                 <div>
                   <label class="block text-xs font-medium text-gray-600 mb-1">Responsável</label>
                   <select x-model="uploadForm.usuario"
+                          @change="uploadForm.usuarioTocadoManualmente = true"
                           class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 ring-bd">
                     <option value="timoteo">Timóteo (Osasco)</option>
                     <option value="carlos">Carlos (Itajaí)</option>
@@ -605,7 +607,7 @@
                    @click="$refs.fileInput.click()">
                 <input type="file" x-ref="fileInput" class="hidden"
                        accept=".xlsx,.xls,.csv" multiple
-                       @change="uploadForm.files = Array.from($event.target.files)" />
+                       @change="uploadForm.files = Array.from($event.target.files); _sugerirCD()" />
                 <div x-show="uploadForm.files.length === 0">
                   <div class="text-4xl mb-3">📂</div>
                   <div class="text-sm font-medium text-gray-600">Arraste ou clique para selecionar</div>
@@ -2456,6 +2458,7 @@
 
       uploadForm: {
         cd: 'OSA', usuario: 'timoteo', files: [], autoEnviar: true,
+        cdTocadoManualmente: false, usuarioTocadoManualmente: false,
       },
 
       pipelineSteps: [
@@ -2904,6 +2907,18 @@
         // Acumula arquivos (sem duplicar pelo nome)
         const existentes = new Set(this.uploadForm.files.map(f => f.name));
         novos.forEach(f => { if (!existentes.has(f.name)) this.uploadForm.files.push(f); });
+        this._sugerirCD();
+      },
+
+      // Preenche CD/Responsável a partir do nome do arquivo como SUGESTÃO de
+      // UX (facilita o caso comum) — nunca sobrescreve uma escolha manual do
+      // usuário, e nunca é usado como fonte de verdade no envio: quem decide
+      // o CD real enviado ao backend é sempre uploadForm.cd/usuario.
+      _sugerirCD() {
+        if (this.uploadForm.files.length === 0) return;
+        const cdSugerido = this._detectarCD(this.uploadForm.files[0].name);
+        if (!this.uploadForm.cdTocadoManualmente) this.uploadForm.cd = cdSugerido;
+        if (!this.uploadForm.usuarioTocadoManualmente) this.uploadForm.usuario = this._detectarUsuario(this.uploadForm.cd);
       },
 
       async enviarUpload() {
@@ -2925,13 +2940,15 @@
         }, 900);
 
         try {
-          // Envia cada arquivo individualmente detectando CD pelo nome do arquivo
+          // Usa o CD/Responsável escolhidos manualmente no formulário — nunca
+          // recalcula pelo nome do arquivo aqui (isso só serve como sugestão
+          // de preenchimento em _sugerirCD(), antes do envio).
           const resultados = [];
           let okCount = 0;
           for (const arquivo of this.uploadForm.files) {
             const fd      = new FormData();
-            const cd      = this._detectarCD(arquivo.name);
-            const usuario = this._detectarUsuario(cd);
+            const cd      = this.uploadForm.cd;
+            const usuario = this.uploadForm.usuario;
             fd.append('arquivo',     arquivo);
             fd.append('cd_codigo',   cd);
             fd.append('usuario',     usuario);

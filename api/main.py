@@ -34,6 +34,7 @@ from agents.orquestrador import Orquestrador
 from agents.agente_resolvedor import AgenteResolvedor
 from agents.agente_classificador import AgenteClassificador
 from agents.agente_montador import AgenteMontador
+from agents.agente_monitor import motivo_pendencia
 
 logging.basicConfig(
     level=logging.INFO,
@@ -1261,6 +1262,7 @@ async def listar_remessas(
             "nf_emitida":     r.nf_emitida,
             "numero_empenho": r.numero_empenho,
             "motivo_tentativa": r.motivo_tentativa,
+            "motivo":         motivo_pendencia(r.id, r.nf_emitida),
             "volume_m3":      float(r.volume_m3 or 0),
             "peso_kg":        float(r.peso_kg   or 0),
             "valor_nf":       float(r.valor_nf  or 0),

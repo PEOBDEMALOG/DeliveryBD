@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, or_, func, exists
+from sqlalchemy import select, and_, func, exists
 from sqlalchemy.orm import selectinload
 
 from core.config import settings
@@ -56,7 +56,10 @@ STATUS_MAP_FROTA = {
 # (13/07). Só se aplica a pendentes com nf_emitida == True (a regra real "Sem
 # NF" para nf_emitida == False nunca é sobreposta por isto). Escolha é
 # remessa.id % len(MOTIVOS_DEMO_PENDENCIA) — determinístico entre reloads.
-# Espelhado em frontend/index.html (motivoBloqueio) — manter os dois em sync.
+# Única fonte de verdade — motivo_pendencia() abaixo é reaproveitada tanto
+# por _pendentes_detalhe() (dashboard) quanto por GET /api/remessas
+# (api/main.py). O frontend só lê o campo "motivo" já calculado — não tem
+# lógica própria de cálculo.
 MOTIVOS_DEMO_PENDENCIA = [
     "Peso/cubagem excede capacidade do veículo",
     "Fora da janela de recebimento do destinatário",
@@ -67,7 +70,12 @@ MOTIVOS_DEMO_PENDENCIA = [
 ]
 
 
-def _motivo_demo_pendencia(remessa_id: int) -> str:
+def motivo_pendencia(remessa_id: int, nf_emitida: bool) -> str:
+    """Motivo de bloqueio de uma remessa pendente (nunca planejada em onda).
+    "Sem NF" é regra de negócio real; o restante são motivos genéricos de
+    demonstração (ver comentário acima de MOTIVOS_DEMO_PENDENCIA)."""
+    if not nf_emitida:
+        return "Sem NF"
     return MOTIVOS_DEMO_PENDENCIA[remessa_id % len(MOTIVOS_DEMO_PENDENCIA)]
 
 
@@ -345,49 +353,38 @@ class AgenteMonitor:
                 return dict(res.all())
 
         async def _pendentes_detalhe() -> dict[str, int]:
-            # Breakdown do motivo de bloqueio de cada pendente, em 3 baldes
-            # mutuamente exclusivos que somam o total de pendentes:
-            # sem_nf > sem_empenho (só se aplica a remessa ATA) > aguardando
-            # planejamento (já tem tudo que precisa, só falta entrar em onda).
+            # Breakdown do motivo de bloqueio de cada pendente. "sem_nf" e o
+            # total de "motivos_demo" vêm de motivo_pendencia() — a mesma
+            # função usada por GET /api/remessas, sem duplicar a regra aqui.
+            # sem_empenho/aguardando continuam calculados pela regra real de
+            # ATA (independente do motivo de demonstração exibido por linha)
+            # para não quebrar o contrato numérico já existente do card.
             async with AsyncSessionLocal() as s:
-                n_motivos = len(MOTIVOS_DEMO_PENDENCIA)
                 res = await s.execute(
-                    select(
-                        func.count(Remessa.id).filter(Remessa.nf_emitida == False),
-                        func.count(Remessa.id).filter(and_(
-                            Remessa.nf_emitida == True,
-                            Remessa.is_ata == True,
-                            Remessa.numero_empenho.is_(None),
-                        )),
-                        func.count(Remessa.id).filter(and_(
-                            Remessa.nf_emitida == True,
-                            or_(Remessa.is_ata == False, Remessa.numero_empenho.isnot(None)),
-                        )),
-                        # MOTIVOS GENÉRICOS PARA DEMONSTRAÇÃO — atribuição
-                        # determinística sem base em regra de negócio real,
-                        # pendente de definição com dado real pós-apresentação.
-                        # Cobre todo pendente com nf_emitida == True (sem_empenho
-                        # + aguardando combinados) — nunca sobrepõe "Sem NF".
-                        *[
-                            func.count(Remessa.id).filter(and_(
-                                Remessa.nf_emitida == True,
-                                Remessa.id % n_motivos == k,
-                            ))
-                            for k in range(n_motivos)
-                        ],
-                    ).where(and_(Remessa.status == "novo", ~tem_onda, *filtro))
+                    select(Remessa.id, Remessa.nf_emitida, Remessa.is_ata, Remessa.numero_empenho)
+                    .where(and_(Remessa.status == "novo", ~tem_onda, *filtro))
                 )
-                linha = res.one()
-                sem_nf_p, sem_empenho, aguardando, *contagens_demo = linha
-                return {
-                    "sem_nf":      sem_nf_p or 0,
-                    "sem_empenho": sem_empenho or 0,
-                    "aguardando":  aguardando or 0,
-                    "motivos_demo": {
-                        motivo: (contagens_demo[i] or 0)
-                        for i, motivo in enumerate(MOTIVOS_DEMO_PENDENCIA)
-                    },
-                }
+                linhas = res.all()
+
+            sem_nf = sem_empenho = aguardando = 0
+            motivos_demo = {m: 0 for m in MOTIVOS_DEMO_PENDENCIA}
+            for remessa_id, nf_emitida, is_ata, numero_empenho in linhas:
+                motivo = motivo_pendencia(remessa_id, nf_emitida)
+                if motivo == "Sem NF":
+                    sem_nf += 1
+                    continue
+                motivos_demo[motivo] += 1
+                if is_ata and not numero_empenho:
+                    sem_empenho += 1
+                else:
+                    aguardando += 1
+
+            return {
+                "sem_nf":       sem_nf,
+                "sem_empenho":  sem_empenho,
+                "aguardando":   aguardando,
+                "motivos_demo": motivos_demo,
+            }
 
         async def _sem_nf() -> int:
             # Sem NF: nf_emitida=False e ainda ativa (mesma definição do

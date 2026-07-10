@@ -895,7 +895,7 @@
                               x-text="r.status?.replace(/_/g,' ')"></span>
                       </td>
                       <td x-show="rastreioFiltro.status === 'tentativa'" class="px-4 py-3 text-xs text-orange-600" x-text="r.motivo_tentativa || 'Motivo não informado'"></td>
-                      <td x-show="rastreioFiltro.semOnda" class="px-4 py-3 text-xs text-orange-600" x-text="motivoBloqueio(r)"></td>
+                      <td x-show="rastreioFiltro.semOnda" class="px-4 py-3 text-xs text-orange-600" x-text="r.motivo"></td>
                       <td class="px-4 py-3 text-center">
                         <span :class="r.nf_emitida ? 'text-green-600' : 'text-red-500'"
                               x-text="r.nf_emitida ? '✓' : '⚠ Pendente'"></span>
@@ -2332,22 +2332,6 @@
     };
   })();
 
-  // MOTIVOS GENÉRICOS PARA DEMONSTRAÇÃO — atribuição determinística sem base em
-  // regra de negócio real, pendente de definição com dado real pós-apresentação
-  // (13/07). Só se aplica a pendentes com nf_emitida == true (a regra real "Sem
-  // NF" para nf_emitida == false nunca é sobreposta por isto). Escolha é
-  // r.id % MOTIVOS_DEMO_PENDENCIA.length — determinístico entre reloads.
-  // Espelhado em agents/agente_monitor.py (_motivo_demo_pendencia) — manter os
-  // dois em sync.
-  const MOTIVOS_DEMO_PENDENCIA = [
-    'Peso/cubagem excede capacidade do veículo',
-    'Fora da janela de recebimento do destinatário',
-    'Divergência de endereço/CEP',
-    'Aguardando consolidação de carga fracionada',
-    'Bloqueio financeiro do cliente',
-    'Pendência de agenda de coleta da transportadora',
-  ];
-
   function app() {
     return {
       page: 'dashboard',
@@ -2589,15 +2573,6 @@
       formatarDataCurta(iso) {
         const [y, m, d] = iso.split('-').map(Number);
         return new Date(y, m - 1, d).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
-      },
-
-      // Mesma lógica do pendentes_detalhe em /api/dashboard, aplicada por linha.
-      motivoBloqueio(r) {
-        if (!r.nf_emitida) return 'Sem NF';   // regra real — nunca sobreposta
-        // MOTIVOS GENÉRICOS PARA DEMONSTRAÇÃO — atribuição determinística sem
-        // base em regra de negócio real, pendente de definição com dado real
-        // pós-apresentação. Ver comentário no topo do arquivo.
-        return MOTIVOS_DEMO_PENDENCIA[r.id % MOTIVOS_DEMO_PENDENCIA.length];
       },
 
       get remessasFiltradas() {

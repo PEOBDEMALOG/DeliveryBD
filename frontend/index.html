@@ -2332,6 +2332,22 @@
     };
   })();
 
+  // MOTIVOS GENÉRICOS PARA DEMONSTRAÇÃO — atribuição determinística sem base em
+  // regra de negócio real, pendente de definição com dado real pós-apresentação
+  // (13/07). Só se aplica a pendentes com nf_emitida == true (a regra real "Sem
+  // NF" para nf_emitida == false nunca é sobreposta por isto). Escolha é
+  // r.id % MOTIVOS_DEMO_PENDENCIA.length — determinístico entre reloads.
+  // Espelhado em agents/agente_monitor.py (_motivo_demo_pendencia) — manter os
+  // dois em sync.
+  const MOTIVOS_DEMO_PENDENCIA = [
+    'Peso/cubagem excede capacidade do veículo',
+    'Fora da janela de recebimento do destinatário',
+    'Divergência de endereço/CEP',
+    'Aguardando consolidação de carga fracionada',
+    'Bloqueio financeiro do cliente',
+    'Pendência de agenda de coleta da transportadora',
+  ];
+
   function app() {
     return {
       page: 'dashboard',
@@ -2577,9 +2593,11 @@
 
       // Mesma lógica do pendentes_detalhe em /api/dashboard, aplicada por linha.
       motivoBloqueio(r) {
-        if (!r.nf_emitida) return 'Sem NF';
-        if (r.is_ata && !r.numero_empenho) return 'Sem empenho';
-        return 'Aguardando';
+        if (!r.nf_emitida) return 'Sem NF';   // regra real — nunca sobreposta
+        // MOTIVOS GENÉRICOS PARA DEMONSTRAÇÃO — atribuição determinística sem
+        // base em regra de negócio real, pendente de definição com dado real
+        // pós-apresentação. Ver comentário no topo do arquivo.
+        return MOTIVOS_DEMO_PENDENCIA[r.id % MOTIVOS_DEMO_PENDENCIA.length];
       },
 
       get remessasFiltradas() {

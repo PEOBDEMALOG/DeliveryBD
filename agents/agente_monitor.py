@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, func, exists
+from sqlalchemy import select, and_, or_, func, exists
 from sqlalchemy.orm import selectinload
 
 from core.config import settings
@@ -325,14 +325,32 @@ class AgenteMonitor:
                 )
                 return dict(res.all())
 
-        async def _pendentes() -> int:
+        async def _pendentes_detalhe() -> dict[str, int]:
+            # Breakdown do motivo de bloqueio de cada pendente, em 3 baldes
+            # mutuamente exclusivos que somam o total de pendentes:
+            # sem_nf > sem_empenho (só se aplica a remessa ATA) > aguardando
+            # planejamento (já tem tudo que precisa, só falta entrar em onda).
             async with AsyncSessionLocal() as s:
                 res = await s.execute(
-                    select(func.count(Remessa.id)).where(
-                        and_(Remessa.status == "novo", ~tem_onda, *filtro)
-                    )
+                    select(
+                        func.count(Remessa.id).filter(Remessa.nf_emitida == False),
+                        func.count(Remessa.id).filter(and_(
+                            Remessa.nf_emitida == True,
+                            Remessa.is_ata == True,
+                            Remessa.numero_empenho.is_(None),
+                        )),
+                        func.count(Remessa.id).filter(and_(
+                            Remessa.nf_emitida == True,
+                            or_(Remessa.is_ata == False, Remessa.numero_empenho.isnot(None)),
+                        )),
+                    ).where(and_(Remessa.status == "novo", ~tem_onda, *filtro))
                 )
-                return res.scalar() or 0
+                sem_nf_p, sem_empenho, aguardando = res.one()
+                return {
+                    "sem_nf":      sem_nf_p or 0,
+                    "sem_empenho": sem_empenho or 0,
+                    "aguardando":  aguardando or 0,
+                }
 
         async def _sem_nf() -> int:
             # Sem NF: nf_emitida=False e ainda ativa (mesma definição do
@@ -349,9 +367,10 @@ class AgenteMonitor:
                 )
                 return res.scalar() or 0
 
-        contagens_raw, alertas_raw, pendentes, sem_nf = await asyncio.gather(
-            _contagem_status(), _contagem_alertas(), _pendentes(), _sem_nf()
+        contagens_raw, alertas_raw, pendentes_detalhe, sem_nf = await asyncio.gather(
+            _contagem_status(), _contagem_alertas(), _pendentes_detalhe(), _sem_nf()
         )
+        pendentes = pendentes_detalhe["sem_nf"] + pendentes_detalhe["sem_empenho"] + pendentes_detalhe["aguardando"]
 
         contagens = {
             status: contagens_raw.get(status, 0)
@@ -372,9 +391,10 @@ class AgenteMonitor:
             "alertas":       alertas,
             "otif_pct":      round(otif, 1),
             "meta_otif_pct": settings.META_OTIF_PCT * 100,
-            "pendentes":     pendentes,
-            "sem_nf":        sem_nf,
-            "gerado_em":     datetime.utcnow().isoformat(),
+            "pendentes":          pendentes,
+            "pendentes_detalhe":  pendentes_detalhe,
+            "sem_nf":             sem_nf,
+            "gerado_em":          datetime.utcnow().isoformat(),
         }
 
     # ── Helpers ───────────────────────────────────────────────────────────────

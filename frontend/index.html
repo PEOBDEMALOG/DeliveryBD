@@ -82,8 +82,10 @@
        class="fixed inset-0 z-[100] bg-gradient-to-br from-blue-950 to-blue-800 flex items-center justify-center p-6">
     <div class="max-w-sm w-full text-center">
       <div class="w-24 h-24 rounded-2xl bg-white flex items-center justify-center mx-auto mb-4 p-4 shadow-lg">
-        <img src="https://upload.wikimedia.org/wikipedia/commons/f/fd/BD_%28company%29_logo.svg"
-             alt="Becton Dickinson" class="w-full h-auto object-contain" />
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 40" class="w-full h-auto" aria-label="BD">
+          <text x="0" y="30" font-family="Arial Black,Arial" font-weight="900"
+                font-size="36" letter-spacing="-1" fill="#005898">BD</text>
+        </svg>
       </div>
       <h1 class="text-white text-xl font-bold mb-1">PEO-BD — Planejamento de Expedição Outbound</h1>
       <p class="text-blue-200 text-sm mb-8">Entre com seu usuário para continuar</p>
@@ -157,8 +159,11 @@
     <aside class="bg-bd w-64 flex-shrink-0 flex flex-col shadow-xl">
       <!-- Logo BD -->
       <div class="px-6 py-5 border-b border-blue-800">
-        <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/b/bb/BD_Logo.svg/320px-BD_Logo.svg.png"
-             alt="BD" class="bd-logo" style="height:32px; margin-bottom:8px; filter:brightness(0) invert(1);">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 40" class="bd-logo"
+             style="height:28px; margin-bottom:8px;" fill="white" aria-label="BD">
+          <text x="0" y="30" font-family="Arial Black,Arial" font-weight="900"
+                font-size="36" letter-spacing="-1">BD</text>
+        </svg>
         <div class="flex items-center gap-3">
           <div>
             <div class="text-white font-bold text-sm leading-tight">PEO-BD</div>
@@ -297,6 +302,11 @@
               <div class="text-xs text-gray-500 uppercase tracking-wide mb-1">🕐 Pendentes</div>
               <div class="text-3xl font-black text-orange-500" x-text="dashboard.pendentes || 0"></div>
               <div class="text-xs text-gray-400 mt-1">nunca planejadas</div>
+              <div class="text-xs mt-1 text-gray-500">
+                <span x-text="(dashboard.pendentes_detalhe?.sem_nf || 0) + ' sem NF'"></span> ·
+                <span x-text="(dashboard.pendentes_detalhe?.sem_empenho || 0) + ' sem empenho'"></span> ·
+                <span x-text="(dashboard.pendentes_detalhe?.aguardando || 0) + ' aguardando'"></span>
+              </div>
             </div>
             <div class="kpi-card bg-white rounded-xl p-3 shadow-sm border border-yellow-100 card-hover cursor-pointer"
                  style="border-top-color:#CA8A04"
@@ -333,6 +343,26 @@
                        x-text="(dashboard.remessas?.tentativa || 0) + (dashboard.remessas?.devolvido || 0)"></div>
                   <div class="text-gray-400">Falhas</div>
                 </div>
+              </div>
+
+              <div class="mt-4 border-t pt-4">
+                <div class="text-sm font-semibold text-gray-600 mb-2">Performance por Transportadora</div>
+                <template x-for="t in otifTransportadoras" :key="t.nome">
+                  <div class="flex items-center gap-2 mb-2">
+                    <span class="text-xs w-32 truncate" x-text="t.nome"></span>
+                    <div class="flex-1 bg-gray-100 rounded-full h-2 relative">
+                      <div class="h-2 rounded-full"
+                           :style="`width:${t.otif}%; background:${t.otif >= t.meta ? '#00A650' : '#DC2626'}`">
+                      </div>
+                      <!-- Linha da meta -->
+                      <div class="absolute top-0 h-2 w-0.5 bg-gray-400"
+                           :style="`left:${t.meta}%`"></div>
+                    </div>
+                    <span class="text-xs font-bold w-12 text-right"
+                          :class="t.otif >= t.meta ? 'text-green-600' : 'text-red-600'"
+                          x-text="t.otif.toFixed(1) + '%'"></span>
+                  </div>
+                </template>
               </div>
             </div>
 
@@ -399,8 +429,16 @@
               </div>
               <span class="text-xs text-gray-400" x-text="ondas.length + ' ondas planejadas'"></span>
             </div>
-            <div x-show="ondas.length === 0" class="px-5 py-8 text-center text-gray-400 text-sm">
-              Nenhuma onda planejada ainda. Faça o upload do arquivo SAP/UPS para iniciar.
+            <div x-show="ondas.length === 0" class="text-center py-8 text-gray-400">
+              <div class="text-4xl mb-2">📋</div>
+              <div class="font-medium" x-text="avisoOndas || 'Nenhuma onda planejada para este dia'"></div>
+              <div x-show="remessasPendentesHoje > 0" class="text-sm mt-1">
+                <span x-text="remessasPendentesHoje"></span> remessas pendentes aguardando upload
+              </div>
+              <button @click="page='upload'"
+                      class="mt-3 px-4 py-2 bg-bd text-white rounded text-sm">
+                + Novo Upload
+              </button>
             </div>
             <div class="overflow-x-auto">
               <table x-show="ondas.length > 0" class="w-full text-sm">
@@ -520,6 +558,8 @@
                   <div class="text-xs text-gray-400 mb-2">planejadas</div>
                   <div class="text-lg font-bold" :class="d.pendentes > 0 ? 'text-orange-500' : 'text-gray-300'" x-text="d.pendentes"></div>
                   <div class="text-xs text-gray-400">pendentes</div>
+                  <div x-show="d.planejadas === 0 && d.pendentes === 0"
+                       class="text-xs text-gray-400 italic mt-1">Sem upload ainda</div>
                 </div>
               </template>
             </div>
@@ -837,6 +877,8 @@
                     <th class="px-4 py-3 text-left">Cliente</th>
                     <th class="px-4 py-3 text-left">Cidade/UF</th>
                     <th class="px-4 py-3 text-center">Status</th>
+                    <th x-show="rastreioFiltro.status === 'tentativa'" class="px-4 py-3 text-left">Motivo</th>
+                    <th x-show="rastreioFiltro.semOnda" class="px-4 py-3 text-left">Motivo do bloqueio</th>
                     <th class="px-4 py-3 text-center">NF</th>
                     <th class="px-4 py-3 text-center">ATA</th>
                     <th class="px-4 py-3 text-right">Vol m³</th>
@@ -856,6 +898,8 @@
                               :class="'status-' + r.status"
                               x-text="r.status?.replace(/_/g,' ')"></span>
                       </td>
+                      <td x-show="rastreioFiltro.status === 'tentativa'" class="px-4 py-3 text-xs text-orange-600" x-text="r.motivo_tentativa || 'Motivo não informado'"></td>
+                      <td x-show="rastreioFiltro.semOnda" class="px-4 py-3 text-xs text-orange-600" x-text="motivoBloqueio(r)"></td>
                       <td class="px-4 py-3 text-center">
                         <span :class="r.nf_emitida ? 'text-green-600' : 'text-red-500'"
                               x-text="r.nf_emitida ? '✓' : '⚠ Pendente'"></span>
@@ -881,7 +925,7 @@
                     </tr>
                   </template>
                   <tr x-show="remessasFiltradas.length === 0">
-                    <td colspan="10" class="px-4 py-8 text-center text-gray-400 text-sm">
+                    <td colspan="12" class="px-4 py-8 text-center text-gray-400 text-sm">
                       Nenhuma remessa encontrada com os filtros aplicados.
                     </td>
                   </tr>
@@ -1188,168 +1232,12 @@
         ════════════════════════════════════════════════════════════════ -->
         <div x-show="page==='painel_diagnostico'" class="p-6 space-y-5">
 
-          <!-- Cabeçalho upload -->
-          <div x-show="erros.ultimo_upload?.arquivo"
-               @click="abrirUploadDetalhe()"
-               class="bg-white rounded-xl shadow-sm border border-gray-100 px-5 py-3 flex items-center gap-3 cursor-pointer hover:bg-gray-50 transition-colors">
-            <span class="text-xl">📋</span>
-            <div>
-              <span class="text-sm font-semibold text-gray-700">Último upload analisado: </span>
-              <span class="text-sm text-gray-500" x-text="erros.ultimo_upload?.arquivo"></span>
-            </div>
-            <div class="ml-auto flex items-center gap-2 text-xs text-gray-400">
-              <span x-text="erros.ultimo_upload?.criado_em ? new Date(erros.ultimo_upload.criado_em).toLocaleString('pt-BR') : ''"></span>
-              <span class="bd-blue">Ver detalhes →</span>
-            </div>
-          </div>
-
-          <!-- KPI Cards -->
-          <div class="grid grid-cols-3 gap-4">
-            <div @click="painelDiagnosticoAba='duplicatas'"
-                 :class="painelDiagnosticoAba==='duplicatas' ? 'ring-2 ring-amber-400' : ''"
-                 class="kpi-card bg-white rounded-xl p-5 shadow-sm border border-gray-100 card-hover cursor-pointer">
-              <div class="flex items-center gap-3 mb-2">
-                <span class="text-2xl">🔁</span>
-                <div class="text-xs text-gray-500 uppercase font-semibold">Remessas Duplicadas</div>
-              </div>
-              <div class="text-4xl font-black text-amber-500" x-text="erros.totais?.duplicatas || 0"></div>
-              <div class="text-xs text-gray-400 mt-1">do último upload</div>
-            </div>
-            <div @click="painelDiagnosticoAba='em_aberto'"
-                 :class="painelDiagnosticoAba==='em_aberto' ? 'ring-2 ring-red-400' : ''"
-                 class="kpi-card bg-white rounded-xl p-5 shadow-sm border border-gray-100 card-hover cursor-pointer">
-              <div class="flex items-center gap-3 mb-2">
-                <span class="text-2xl">📂</span>
-                <div class="text-xs text-gray-500 uppercase font-semibold">Remessas em Aberto</div>
-              </div>
-              <div class="text-4xl font-black text-red-500" x-text="erros.totais?.em_aberto || 0"></div>
-              <div class="text-xs text-gray-400 mt-1">backlog acumulado</div>
-            </div>
-            <div @click="painelDiagnosticoAba='sem_nf'"
-                 :class="painelDiagnosticoAba==='sem_nf' ? 'ring-2 ring-purple-400' : ''"
-                 class="kpi-card bg-white rounded-xl p-5 shadow-sm border border-gray-100 card-hover cursor-pointer">
-              <div class="flex items-center gap-3 mb-2">
-                <span class="text-2xl">📄</span>
-                <div class="text-xs text-gray-500 uppercase font-semibold">Sem Nota Fiscal</div>
-              </div>
-              <div class="text-4xl font-black text-purple-600" x-text="erros.totais?.sem_nf || 0"></div>
-              <div class="text-xs text-gray-400 mt-1">despacho bloqueado</div>
-            </div>
-          </div>
-
-          <!-- Tabela Duplicatas -->
-          <div x-show="painelDiagnosticoAba==='duplicatas'" class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-            <div class="px-5 py-3 border-b border-gray-100 text-sm font-semibold text-gray-700">🔁 Remessas Duplicadas</div>
-            <div x-show="erros.duplicatas?.length === 0" class="px-5 py-8 text-center text-gray-400 text-sm">Nenhuma duplicata detectada no último upload.</div>
-            <table x-show="erros.duplicatas?.length > 0" class="w-full text-sm">
-              <thead class="bg-gray-50 text-xs text-gray-500 uppercase">
-                <tr>
-                  <th class="px-4 py-3 text-left">Remessa</th>
-                  <th class="px-4 py-3 text-left">Cliente</th>
-                  <th class="px-4 py-3 text-right">Valor NF</th>
-                  <th class="px-4 py-3 text-left">Motivo</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-gray-50">
-                <template x-for="d in erros.duplicatas" :key="d.numero">
-                  <tr class="hover:bg-gray-50">
-                    <td class="px-4 py-3 font-mono text-xs font-semibold text-amber-700" x-text="d.numero"></td>
-                    <td class="px-4 py-3 text-gray-700 max-w-xs truncate" x-text="d.cliente"></td>
-                    <td class="px-4 py-3 text-right text-gray-600" x-text="'R$ ' + (d.valor_nf||0).toLocaleString('pt-BR',{minimumFractionDigits:0})"></td>
-                    <td class="px-4 py-3 text-xs text-gray-500" x-text="d.motivo"></td>
-                  </tr>
-                </template>
-              </tbody>
-            </table>
-          </div>
-
-          <!-- Tabela Em Aberto -->
-          <div x-show="painelDiagnosticoAba==='em_aberto'" class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-            <div class="px-5 py-3 border-b border-gray-100 text-sm font-semibold text-gray-700">📂 Remessas em Aberto (Backlog)</div>
-            <div x-show="erros.em_aberto?.length === 0" class="px-5 py-8 text-center text-gray-400 text-sm">Nenhuma remessa em aberto. Sistema em dia!</div>
-            <table x-show="erros.em_aberto?.length > 0" class="w-full text-sm">
-              <thead class="bg-gray-50 text-xs text-gray-500 uppercase">
-                <tr>
-                  <th class="px-4 py-3 text-left">Remessa</th>
-                  <th class="px-4 py-3 text-left">Cliente</th>
-                  <th class="px-4 py-3 text-center">Data Extração</th>
-                  <th class="px-4 py-3 text-center">Dias em Aberto</th>
-                  <th class="px-4 py-3 text-center">ATA</th>
-                  <th class="px-4 py-3 text-right">Valor NF</th>
-                  <th class="px-4 py-3 text-center">Prioridade</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-gray-50">
-                <template x-for="r in erros.em_aberto" :key="r.numero">
-                  <tr class="hover:bg-gray-50">
-                    <td class="px-4 py-3 font-mono text-xs font-semibold text-gray-700" x-text="r.numero"></td>
-                    <td class="px-4 py-3 text-gray-700 max-w-xs truncate" x-text="r.cliente"></td>
-                    <td class="px-4 py-3 text-center text-xs text-gray-500" x-text="new Date(r.data_extracao).toLocaleDateString('pt-BR')"></td>
-                    <td class="px-4 py-3 text-center">
-                      <span class="text-xs font-bold px-2 py-0.5 rounded-full"
-                            :class="r.dias_em_aberto > 7 ? 'bg-red-100 text-red-700' : r.dias_em_aberto > 3 ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600'"
-                            x-text="r.dias_em_aberto + 'd'"></span>
-                    </td>
-                    <td class="px-4 py-3 text-center">
-                      <span x-show="r.is_ata" class="text-xs bg-purple-100 text-purple-700 font-semibold px-2 py-0.5 rounded-full">ATA</span>
-                      <span x-show="!r.is_ata" class="text-gray-300 text-xs">—</span>
-                    </td>
-                    <td class="px-4 py-3 text-right text-gray-600" x-text="'R$ ' + (r.valor_nf||0).toLocaleString('pt-BR',{minimumFractionDigits:0})"></td>
-                    <td class="px-4 py-3 text-center">
-                      <span class="text-xs font-semibold px-2 py-0.5 rounded-full"
-                            :class="r.prioridade==='critica' ? 'bg-red-100 text-red-700' : r.prioridade==='alta' ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-500'"
-                            x-text="r.prioridade"></span>
-                    </td>
-                  </tr>
-                </template>
-              </tbody>
-            </table>
-          </div>
-
-          <!-- Tabela Sem NF -->
-          <div x-show="painelDiagnosticoAba==='sem_nf'" class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-            <div class="px-5 py-3 border-b border-gray-100 text-sm font-semibold text-gray-700">📄 Remessas sem Nota Fiscal</div>
-            <div x-show="erros.sem_nf?.length === 0" class="px-5 py-8 text-center text-gray-400 text-sm">Todas as remessas têm NF emitida.</div>
-            <table x-show="erros.sem_nf?.length > 0" class="w-full text-sm">
-              <thead class="bg-gray-50 text-xs text-gray-500 uppercase">
-                <tr>
-                  <th class="px-4 py-3 text-left">Remessa</th>
-                  <th class="px-4 py-3 text-left">Cliente</th>
-                  <th class="px-4 py-3 text-center">Status</th>
-                  <th class="px-4 py-3 text-center">ATA</th>
-                  <th class="px-4 py-3 text-right">Valor NF</th>
-                  <th class="px-4 py-3 text-center">Prioridade</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-gray-50">
-                <template x-for="r in erros.sem_nf" :key="r.numero">
-                  <tr class="hover:bg-gray-50">
-                    <td class="px-4 py-3 font-mono text-xs font-semibold text-purple-700" x-text="r.numero"></td>
-                    <td class="px-4 py-3 text-gray-700 max-w-xs truncate" x-text="r.cliente"></td>
-                    <td class="px-4 py-3 text-center">
-                      <span class="text-xs font-semibold px-2 py-0.5 rounded-full status-novo" x-text="r.status"></span>
-                    </td>
-                    <td class="px-4 py-3 text-center">
-                      <span x-show="r.is_ata" class="text-xs bg-purple-100 text-purple-700 font-semibold px-2 py-0.5 rounded-full">ATA</span>
-                      <span x-show="!r.is_ata" class="text-gray-300 text-xs">—</span>
-                    </td>
-                    <td class="px-4 py-3 text-right text-gray-600" x-text="'R$ ' + (r.valor_nf||0).toLocaleString('pt-BR',{minimumFractionDigits:0})"></td>
-                    <td class="px-4 py-3 text-center">
-                      <span class="text-xs font-semibold px-2 py-0.5 rounded-full"
-                            :class="r.prioridade==='critica' ? 'bg-red-100 text-red-700' : r.prioridade==='alta' ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-500'"
-                            x-text="r.prioridade"></span>
-                    </td>
-                  </tr>
-                </template>
-              </tbody>
-            </table>
-          </div>
-          <!-- Último Erro Identificado -->
+          <!-- 1. Últimos Erros -->
           <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
             <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
               <div>
-                <div class="text-sm font-semibold text-gray-700">Último Erro Identificado</div>
-                <div class="text-xs text-gray-400 mt-0.5">5 erros de sistema mais recentes — atualiza com o dashboard</div>
+                <div class="text-sm font-semibold text-gray-700">Últimos Erros</div>
+                <div class="text-xs text-gray-400 mt-0.5">10 erros de sistema mais recentes</div>
               </div>
               <button @click="loadUltimosErros()" class="text-xs bd-blue hover:underline">Atualizar</button>
             </div>
@@ -1374,6 +1262,66 @@
                   <span class="shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full"
                         :class="['sucesso','acao_automatica'].includes(ev.resultado) ? 'bg-green-100 text-green-700' : ev.resultado === 'falha' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'"
                         x-text="ev.resultado === 'acao_automatica' ? 'Resolvido automaticamente' : (ev.resultado === 'alerta_gerado' ? 'Escalado' : ev.resultado)"></span>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <!-- 2. Status dos Agentes -->
+          <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+              <div class="text-sm font-semibold text-gray-700">Status dos Agentes</div>
+              <button @click="loadStatusAgentes()" class="text-xs bd-blue hover:underline">Atualizar</button>
+            </div>
+            <div class="divide-y divide-gray-50">
+              <template x-for="ag in statusAgentes" :key="ag.agente">
+                <div class="px-5 py-3 flex items-center gap-3">
+                  <span class="text-lg shrink-0" x-text="agenteIcone(ag.agente)"></span>
+                  <div class="flex-1 min-w-0">
+                    <div class="text-sm font-semibold text-gray-700 capitalize" x-text="ag.agente"></div>
+                    <div class="text-xs text-gray-400 truncate" x-text="ag.descricao || 'Nenhuma execução registrada'"></div>
+                  </div>
+                  <div class="text-right shrink-0">
+                    <div class="text-xs text-gray-500" x-text="ag.ultima_execucao ? new Date(ag.ultima_execucao).toLocaleString('pt-BR') : '—'"></div>
+                    <span x-show="ag.resultado" class="text-xs font-semibold px-2 py-0.5 rounded-full"
+                          :class="['sucesso','acao_automatica'].includes(ag.resultado) ? 'bg-green-100 text-green-700' : ag.resultado === 'falha' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'"
+                          x-text="ag.resultado"></span>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <!-- 3. Log de Auditoria -->
+          <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <div class="text-sm font-semibold text-gray-700">Log de Auditoria</div>
+                <div class="text-xs text-gray-400 mt-0.5">últimos 20 eventos</div>
+              </div>
+              <div class="flex items-center gap-2">
+                <select x-model="logAuditoriaGravidade" @change="loadLogAuditoria()"
+                        class="border border-gray-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none">
+                  <option value="">Todas as gravidades</option>
+                  <option value="critico">Crítico</option>
+                  <option value="alerta">Alerta</option>
+                  <option value="info">Info</option>
+                </select>
+                <button @click="loadLogAuditoria()" class="text-xs bd-blue hover:underline">Atualizar</button>
+              </div>
+            </div>
+            <div x-show="logAuditoria.length === 0" class="px-5 py-8 text-center text-gray-400 text-sm">
+              Nenhum evento registrado.
+            </div>
+            <div x-show="logAuditoria.length > 0" class="divide-y divide-gray-50 max-h-[480px] overflow-y-auto">
+              <template x-for="ev in logAuditoria" :key="ev.id">
+                <div class="px-5 py-2.5 flex items-start gap-3 hover:bg-gray-50 text-xs">
+                  <span class="font-bold px-2 py-0.5 rounded-full shrink-0"
+                        :class="badgeGravidade(ev.gravidade).bg + ' ' + badgeGravidade(ev.gravidade).text"
+                        x-text="(ev.gravidade || '—').toUpperCase()"></span>
+                  <span class="text-gray-400 shrink-0 w-32" x-text="new Date(ev.timestamp).toLocaleString('pt-BR')"></span>
+                  <span class="font-mono font-semibold text-gray-700 shrink-0" x-text="ev.tipo_evento"></span>
+                  <span class="text-gray-500 truncate" x-text="ev.descricao"></span>
                 </div>
               </template>
             </div>
@@ -2250,6 +2198,8 @@
                 <div class="text-xs text-gray-400 mb-1">Status atual</div>
                 <span class="text-xs font-semibold px-2 py-0.5 rounded-full" :class="'status-' + modalRemessa.status"
                       x-text="modalRemessa.status?.replace(/_/g,' ')"></span>
+                <div x-show="modalRemessa.status === 'tentativa'" class="text-xs text-orange-600 mt-1"
+                     x-text="modalRemessa.motivo_tentativa || 'Motivo não informado'"></div>
               </div>
               <div class="bg-gray-50 rounded-lg p-3">
                 <div class="text-xs text-gray-400 mb-1">Prioridade</div>
@@ -2364,64 +2314,6 @@
   </div><!-- /modal evento -->
 
 
-  <!-- ═══════════════════════════════════════════════════════════════
-       MODAL: DETALHE DO UPLOAD
-  ════════════════════════════════════════════════════════════════ -->
-  <div x-show="uploadDetalheModal" x-cloak
-       class="fixed inset-0 z-50 flex items-center justify-center"
-       @keydown.escape.window="fecharUploadDetalheModal()">
-    <div class="absolute inset-0 bg-black bg-opacity-40" @click="fecharUploadDetalheModal()"></div>
-    <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto mx-4">
-      <template x-if="uploadDetalhe">
-        <div>
-          <div class="bg-bd px-6 py-5 rounded-t-2xl flex items-start justify-between">
-            <div>
-              <div class="text-white font-bold text-lg leading-tight" x-text="uploadDetalhe.arquivo"></div>
-              <div class="text-blue-300 text-xs mt-1"
-                   x-text="(uploadDetalhe.cd || '—') + ' · ' + (uploadDetalhe.criado_em ? new Date(uploadDetalhe.criado_em).toLocaleString('pt-BR') : '—')"></div>
-            </div>
-            <button @click="fecharUploadDetalheModal()" class="text-blue-300 hover:text-white text-2xl leading-none mt-1">×</button>
-          </div>
-
-          <div class="p-6 space-y-5">
-            <div class="grid grid-cols-3 gap-3 text-sm">
-              <div class="bg-gray-50 rounded-xl p-4 text-center">
-                <div class="text-2xl font-black bd-blue" x-text="uploadDetalhe.total_remessas || 0"></div>
-                <div class="text-xs text-gray-400 mt-1">Remessas processadas</div>
-              </div>
-              <div class="bg-gray-50 rounded-xl p-4 text-center">
-                <div class="text-2xl font-black text-red-500" x-text="uploadDetalhe.linhas_erro || 0"></div>
-                <div class="text-xs text-gray-400 mt-1">Erros</div>
-              </div>
-              <div class="bg-gray-50 rounded-xl p-4 text-center">
-                <div class="text-2xl font-black text-amber-500" x-text="uploadDetalhe.linhas_dup || 0"></div>
-                <div class="text-xs text-gray-400 mt-1">Duplicatas</div>
-              </div>
-            </div>
-
-            <div>
-              <div class="text-sm font-semibold text-gray-700 mb-2">Remessas inseridas</div>
-              <div x-show="!uploadDetalhe.remessas || uploadDetalhe.remessas.length === 0"
-                   class="text-sm text-gray-400 bg-gray-50 rounded-lg px-4 py-3">
-                Nenhuma remessa associada a este upload.
-              </div>
-              <div class="max-h-72 overflow-y-auto divide-y divide-gray-50 border border-gray-100 rounded-lg">
-                <template x-for="r in (uploadDetalhe.remessas || [])" :key="r.id">
-                  <div class="flex items-center justify-between px-3 py-2 text-xs">
-                    <span class="font-mono font-semibold text-gray-700" x-text="r.numero"></span>
-                    <span class="text-gray-500 truncate max-w-[220px]" x-text="r.cliente"></span>
-                    <span class="px-1.5 py-0.5 rounded text-xs" :class="'status-'+r.status" x-text="r.status"></span>
-                  </div>
-                </template>
-              </div>
-            </div>
-          </div>
-        </div>
-      </template>
-    </div>
-  </div><!-- /modal upload -->
-
-
   <script>
   // Injeta "Authorization: Bearer <token>" em toda chamada para /api/* e
   // dispara um logout automático se o token expirar/for rejeitado (401) —
@@ -2457,7 +2349,10 @@
       perfilSelecionado: null,
       cdFiltro: '',
       dashboard: { remessas: {}, alertas: {} },
+      otifTransportadoras: [],
       ondas: [],
+      avisoOndas: null,
+      remessasPendentesHoje: 0,
       alertas: [],
       alertaFiltro: '',
       remessas: [],
@@ -2488,23 +2383,20 @@
       // Modal de evento de transportadora
       eventoModal: false,
       eventoDetalhe: null,
-      // Modal de detalhe de upload
-      uploadDetalheModal: false,
-      uploadDetalhe: null,
       // Ondas do dia — painel expansível
       ondaExpandidaDashboard: null,
       remessasOndaDashboard: [],
       remessasOndaDashboardCarregando: false,
-      // Último Erro Identificado
+      // Painel de Diagnóstico: Últimos Erros / Status dos Agentes / Log de Auditoria
       ultimosErros: [],
+      statusAgentes: [],
+      logAuditoria: [],
+      logAuditoriaGravidade: '',
       // Clientes
       clientes: [],
       clientesBusca: '',
       clienteModal: false,
       clienteDetalhe: null,
-      // Erros
-      erros: { totais: { duplicatas:0, em_aberto:0, sem_nf:0 }, duplicatas:[], em_aberto:[], sem_nf:[], ultimo_upload: null },
-      painelDiagnosticoAba: 'em_aberto',
       // Assistente de Diagnóstico
       popupAssistente: false,
       chatContextoModo: 'geral',   // 'geral' (botão flutuante) | 'erro' (? Ajuda por tipo de erro)
@@ -2549,7 +2441,7 @@
         { id: 'dashboard',       icon: '📊', label: 'Dashboard',          title: 'Dashboard de Expedição' },
         { id: 'upload',          icon: '📂', label: 'Novo Upload',         title: 'Upload de Arquivo' },
         { id: 'clientes',        icon: '👥', label: 'Clientes',            title: 'Gestão de Clientes' },
-        { id: 'painel_diagnostico', icon: '⚠️', label: 'Painel de Diagnóstico', title: 'Painel de Diagnóstico: Duplicatas · Abertos · Sem NF' },
+        { id: 'painel_diagnostico', icon: '⚠️', label: 'Painel de Diagnóstico', title: 'Painel de Diagnóstico: Erros · Agentes · Auditoria' },
         { id: 'rastreio',        icon: '🚚', label: 'Rastreio',            title: 'Rastreio Consolidado' },
         { id: 'transportadoras', icon: '🚛', label: 'Transportadoras',     title: 'Transportadoras & Cotação de Rotas' },
         { id: 'oportunidades',   icon: '💰', label: 'Oportunidades FTL',   title: 'Oportunidades de Consolidação FTL' },
@@ -2686,6 +2578,13 @@
         return new Date(y, m - 1, d).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
       },
 
+      // Mesma lógica do pendentes_detalhe em /api/dashboard, aplicada por linha.
+      motivoBloqueio(r) {
+        if (!r.nf_emitida) return 'Sem NF';
+        if (r.is_ata && !r.numero_empenho) return 'Sem empenho';
+        return 'Aguardando';
+      },
+
       get remessasFiltradas() {
         return this.remessas.filter(r => {
           const busca = this.rastreioFiltro.busca.toLowerCase();
@@ -2742,7 +2641,7 @@
           if (p === 'oportunidades')   this.loadOportunidades();
           if (p === 'dashboard')       { this.loadDashboard(); this.loadOndas(); this.loadProximosDias(); }
           if (p === 'clientes')        this.loadClientes();
-          if (p === 'painel_diagnostico')           { this.loadPainelDiagnostico(); this.loadUltimosErros(); }
+          if (p === 'painel_diagnostico') { this.loadUltimosErros(); this.loadStatusAgentes(); this.loadLogAuditoria(); }
           if (p === 'transportadoras') { this.loadTransportadoras(); this.loadCotacao(); this.loadEstatisticasTransp(); }
           if (p === 'historico_ondas') this.loadHistoricoOndas();
         });
@@ -2765,6 +2664,13 @@
           this.$nextTick(() => this.renderOtifChart());
           await this.loadOndas();
           await this.loadProximosDias();
+          const rt = await fetch('/api/transportadoras/estatisticas');
+          const stats = await rt.json();
+          this.otifTransportadoras = stats.map(t => ({
+            nome: t.nome,
+            otif: t.otif_atual || 0,
+            meta: t.meta_otif || 95,
+          }));
         } catch(e) { console.error('dashboard:', e); }
       },
 
@@ -2773,7 +2679,10 @@
           const params = new URLSearchParams({ data: this.ondasData || this.hojeISO });
           if (this.cdFiltro) params.set('cd_codigo', this.cdFiltro);
           const res = await fetch(`/api/ondas-hoje?${params}`);
-          this.ondas = await res.json();
+          const dados = await res.json();
+          this.ondas = dados.ondas || [];
+          this.avisoOndas = dados.aviso || null;
+          this.remessasPendentesHoje = dados.remessas_pendentes || 0;
         } catch(e) { console.error('ondas:', e); }
       },
 
@@ -2890,29 +2799,35 @@
         this.eventoDetalhe = null;
       },
 
-      // ── Modal: Detalhe de upload ─────────────────────────────────────────
-      async abrirUploadDetalhe() {
-        const id = this.erros.ultimo_upload?.id;
-        if (!id) return;
-        try {
-          const res = await fetch(`/api/uploads/${id}`);
-          if (!res.ok) throw new Error('Falha ao buscar detalhe do upload');
-          this.uploadDetalhe = await res.json();
-          this.uploadDetalheModal = true;
-        } catch(e) { console.error('upload_detalhe:', e); }
-      },
-
-      fecharUploadDetalheModal() {
-        this.uploadDetalheModal = false;
-        this.uploadDetalhe = null;
-      },
-
-      // ── Último Erro Identificado ─────────────────────────────────────────
+      // ── Painel de Diagnóstico ─────────────────────────────────────────────
       async loadUltimosErros() {
         try {
-          const res = await fetch('/api/historico?tipo_evento=erro_sistema&limit=5');
+          const res = await fetch('/api/historico?tipo_evento=erro_sistema&limit=10');
           this.ultimosErros = await res.json();
         } catch(e) { console.error('ultimos_erros:', e); }
+      },
+
+      async loadStatusAgentes() {
+        try {
+          const res = await fetch('/api/agentes/status');
+          this.statusAgentes = await res.json();
+        } catch(e) { console.error('status_agentes:', e); }
+      },
+
+      async loadLogAuditoria() {
+        try {
+          const params = new URLSearchParams({ limit: 20 });
+          if (this.logAuditoriaGravidade) params.set('gravidade', this.logAuditoriaGravidade);
+          const res = await fetch(`/api/historico?${params}`);
+          this.logAuditoria = await res.json();
+        } catch(e) { console.error('log_auditoria:', e); }
+      },
+
+      agenteIcone(agente) {
+        return {
+          ingestor: '📥', classificador: '🏷️', montador: '📦',
+          comunicador: '📨', monitor: '📡', resolvedor: '🛠️',
+        }[agente] || '⚙️';
       },
 
       badgeGravidade(gravidade) {
@@ -3144,15 +3059,6 @@
           c.cidade?.toLowerCase().includes(b) ||
           c.tipo?.toLowerCase().includes(b)
         );
-      },
-
-      // ── Erros ─────────────────────────────────────────────────────────────
-      async loadPainelDiagnostico() {
-        try {
-          const params = this.cdFiltro ? `?cd_codigo=${this.cdFiltro}` : '';
-          const res = await fetch(`/api/erros-upload${params}`);
-          this.erros = await res.json();
-        } catch(e) { console.error('erros:', e); }
       },
 
       // ── Assistente de Diagnóstico ─────────────────────────────────────────

@@ -139,6 +139,8 @@ class Remessa(Base):
     status          = Column(String(30), default="novo", index=True)
     tipo_entrega    = Column(String(20))
     prioridade      = Column(String(20), default="normal")
+    motivo_tentativa = Column(String(200), nullable=True)
+    # Ex: "Destinatário ausente", "Endereço não localizado", "Recusado pelo destinatário"
 
     is_ata          = Column(Boolean, default=False)
     numero_empenho  = Column(String(50))
@@ -338,7 +340,7 @@ class HistoricoEventos(Base):
     id                = Column(Integer, primary_key=True)
     timestamp         = Column(DateTime, default=datetime.utcnow, index=True)
     tipo_evento       = Column(String(50), nullable=False, index=True)
-    origem            = Column(String(30), nullable=False)
+    origem            = Column(String(30), nullable=False, index=True)
     ator_tipo         = Column(String(20), nullable=False)
     ator_nome         = Column(String(100), nullable=True)
     remessa_id        = Column(Integer, ForeignKey("remessas.id"), nullable=True, index=True)

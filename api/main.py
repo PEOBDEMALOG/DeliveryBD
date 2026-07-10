@@ -173,6 +173,7 @@ async def _garantir_colunas_novas(conn):
     alteracoes = [
         ("ondas", "justificativa", "TEXT"),
         ("transportadoras", "meta_otif", "FLOAT DEFAULT 95.0"),
+        ("remessas", "motivo_tentativa", "VARCHAR(200)"),
     ]
     for tabela, coluna, tipo in alteracoes:
         stmt = (
@@ -439,7 +440,17 @@ async def ondas_hoje(
                 "justificativa":   o.justificativa,
             })
 
-    return resultado
+    aviso = None
+    remessas_pendentes = 0
+    if not resultado and data_plano >= date.today():
+        filtro_pend = [Remessa.data_extracao == data_plano, Remessa.status == "novo"]
+        if cd_id:
+            filtro_pend.append(Remessa.cd_id == cd_id)
+        res_pend = await db.execute(select(func.count(Remessa.id)).where(and_(*filtro_pend)))
+        remessas_pendentes = res_pend.scalar() or 0
+        aviso = "Nenhuma onda planejada. Faça upload do arquivo do dia para gerar o planejamento."
+
+    return {"ondas": resultado, "aviso": aviso, "remessas_pendentes": remessas_pendentes}
 
 
 # ── PRÓXIMOS DIAS (planejamento futuro) ───────────────────────────────────────
@@ -1248,6 +1259,8 @@ async def listar_remessas(
             "is_ata":         r.is_ata,
             "dias_restantes": r.dias_restantes,
             "nf_emitida":     r.nf_emitida,
+            "numero_empenho": r.numero_empenho,
+            "motivo_tentativa": r.motivo_tentativa,
             "volume_m3":      float(r.volume_m3 or 0),
             "peso_kg":        float(r.peso_kg   or 0),
             "valor_nf":       float(r.valor_nf  or 0),
@@ -1783,6 +1796,30 @@ async def get_historico(
     query = query.limit(min(limit, 500))
     res = await db.execute(query)
     return [serializar_evento(e) for e in res.scalars().all()]
+
+
+AGENTES_ORIGENS = ["ingestor", "classificador", "montador", "comunicador", "monitor", "resolvedor"]
+
+
+@app.get("/api/agentes/status", summary="Última execução de cada agente")
+async def status_agentes(db: AsyncSession = Depends(get_db)):
+    resultado = []
+    for origem in AGENTES_ORIGENS:
+        res = await db.execute(
+            select(HistoricoEventos)
+            .where(HistoricoEventos.origem == origem)
+            .order_by(HistoricoEventos.timestamp.desc())
+            .limit(1)
+        )
+        evento = res.scalar_one_or_none()
+        resultado.append({
+            "agente":           origem,
+            "ultima_execucao":  evento.timestamp.isoformat() if evento else None,
+            "descricao":        evento.descricao if evento else None,
+            "resultado":        evento.resultado if evento else None,
+            "tipo_evento":      evento.tipo_evento if evento else None,
+        })
+    return resultado
 
 
 @app.get("/api/tipos-erro", summary="Lista o catálogo de tipos de erro")

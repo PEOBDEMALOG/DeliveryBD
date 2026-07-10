@@ -47,6 +47,9 @@ INDEXES = [
     # mostrou Seq Scan + sort completo das 27k linhas por não haver índice que
     # sustente o ORDER BY (prioridade, janela_inicio) usado por padrão na listagem.
     ("idx_remessas_prioridade_janela", "CREATE INDEX IF NOT EXISTS idx_remessas_prioridade_janela ON remessas(prioridade, janela_inicio)"),
+    # Suporta "última execução por agente" no novo Painel de Diagnóstico
+    # (WHERE origem=X ORDER BY timestamp DESC LIMIT 1, 6x por request).
+    ("idx_historico_origem",          "CREATE INDEX IF NOT EXISTS idx_historico_origem ON historico_eventos(origem, timestamp DESC)"),
 ]
 
 

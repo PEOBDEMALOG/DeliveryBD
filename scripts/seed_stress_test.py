@@ -26,7 +26,7 @@ sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from sqlalchemy import insert, select, text, update, func
+from sqlalchemy import insert, select, text, update, func, bindparam
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 
 from core.config import settings, DB_CONNECT_ARGS
@@ -87,6 +87,15 @@ FSM_OFFSET = {
 }
 
 ERROS_CODIGOS_TIMEOUT = ["TIMEOUT_SAP", "ARQUIVO_CORROMPIDO"]
+
+MOTIVOS_TENTATIVA = [
+    "Destinatário ausente no momento da entrega",
+    "Endereço não localizado",
+    "Recusado pelo destinatário",
+    "Estabelecimento fechado",
+    "Acesso bloqueado ao local",
+    "Documento do destinatário não apresentado",
+]
 
 CHUNK_DIAS = 44  # dias úteis processados por lote de commit
 
@@ -391,6 +400,18 @@ class GeradorStress:
                 update(Remessa).where(Remessa.id.in_(ids)).values(status=status_final)
             )
 
+        # Motivo da falha, só para quem parou em "tentativa" (bulk update por PK).
+        tentativa_ids = aging_por_status.get("tentativa", [])
+        if tentativa_ids:
+            await self.db.execute(
+                # Remessa.__table__ (Core, não a classe ORM) evita que o SQLAlchemy
+                # trate isto como "ORM Bulk UPDATE by Primary Key" — que exige a
+                # chave do dict batendo com o nome literal da coluna ("id"), não
+                # com o nome do bindparam.
+                update(Remessa.__table__).where(Remessa.__table__.c.id == bindparam("_id")),
+                [{"_id": rid, "motivo_tentativa": random.choice(MOTIVOS_TENTATIVA)} for rid in tentativa_ids],
+            )
+
         # ── Programações de coleta (simuladas a partir das ondas reais) ─────
         # O Comunicador de verdade não é chamado aqui (enviaria e-mails de
         # verdade); simulamos a confirmação de coleta em cima das ondas reais
@@ -681,6 +702,17 @@ class GeradorStress:
         for status_final, ids in aging_por_status.items():
             await self.db.execute(
                 update(Remessa).where(Remessa.id.in_(ids)).values(status=status_final)
+            )
+
+        tentativa_ids = aging_por_status.get("tentativa", [])
+        if tentativa_ids:
+            await self.db.execute(
+                # Remessa.__table__ (Core, não a classe ORM) evita que o SQLAlchemy
+                # trate isto como "ORM Bulk UPDATE by Primary Key" — que exige a
+                # chave do dict batendo com o nome literal da coluna ("id"), não
+                # com o nome do bindparam.
+                update(Remessa.__table__).where(Remessa.__table__.c.id == bindparam("_id")),
+                [{"_id": rid, "motivo_tentativa": random.choice(MOTIVOS_TENTATIVA)} for rid in tentativa_ids],
             )
 
         # ── Programações + eventos mínimos ──────────────────────────────────

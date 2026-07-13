@@ -6,7 +6,6 @@ import hashlib
 import json
 import logging
 import shutil
-import uuid
 from datetime import date, datetime, timedelta, time as dtime
 from pathlib import Path
 from typing import Any, List, Optional
@@ -20,7 +19,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, func, update, exists, delete
+from sqlalchemy import select, and_, func, update, exists
 from sqlalchemy.orm import selectinload, joinedload
 
 from core.config import settings, IS_VERCEL
@@ -383,78 +382,6 @@ async def dashboard_coletas_pendentes(
     orq: Orquestrador = Depends(get_orq),
 ):
     return await orq.dashboard_coletas_pendentes(cd_codigo)
-
-
-# ── [TEMPORÁRIO] Debug — cenário de teste do card "Turnaround de Coleta" ──────
-# Reintroduzido só pra validar o ajuste de cor do estado "dentro do SLA"
-# (cinza -> laranja). Remover depois de validar. Cria/apaga apenas
-# ProgramacaoColeta com protocolo "TESTE-*" (nunca colide com dado real).
-
-@app.post("/api/debug/seed-coleta-teste", summary="[TEMPORÁRIO] cria cenário de teste do turnaround de coleta")
-async def debug_seed_coleta_teste(db: AsyncSession = Depends(get_db)):
-    res = await db.execute(
-        select(Onda.id)
-        .join(PlanoDia, PlanoDia.id == Onda.plano_id)
-        .join(CentroDistribuicao, CentroDistribuicao.id == PlanoDia.cd_id)
-        .where(CentroDistribuicao.codigo == "OSA")
-        .limit(1)
-    )
-    onda_id = res.scalar_one_or_none()
-    if not onda_id:
-        return {"erro": "Nenhuma onda de OSA encontrada para usar como referência (FK)."}
-
-    res_transp = await db.execute(
-        select(Transportadora).where(Transportadora.codigo.in_(["DHL", "JADLOG"]))
-    )
-    transportadoras = {t.codigo: t for t in res_transp.scalars().all()}
-
-    agora = datetime.utcnow()
-    # DHL fica so com pendente EXCEDIDO (vermelho). Jadlog fica so com
-    # pendente DENTRO do SLA (laranja). Frota/TNT ficam sem nenhuma
-    # ProgramacaoColeta pendente -> "tudo em dia" (verde), pros 3 estados
-    # aparecerem lado a lado.
-    cenarios = [
-        ("DHL",    3.5),   # SLA 2h — excedeu
-        ("JADLOG", 1.0),   # SLA 4h — dentro
-    ]
-
-    criados = []
-    for codigo, horas_atras in cenarios:
-        t = transportadoras.get(codigo)
-        if not t:
-            continue
-        prog = ProgramacaoColeta(
-            onda_id            = onda_id,
-            transportadora_id  = t.id,
-            canal              = "email",
-            destinatario_email = t.email_operacoes,
-            assunto            = "[TESTE] cenário turnaround de coleta — remover após validação",
-            corpo              = "[TESTE] linha criada manualmente para validar o card de turnaround de coleta.",
-            status_envio       = "enviado",
-            enviado_em         = agora - timedelta(hours=horas_atras),
-            protocolo          = f"TESTE-{uuid.uuid4().hex[:8].upper()}",
-        )
-        db.add(prog)
-        await db.flush()
-        criados.append({"id": prog.id, "transportadora": codigo, "horas_atras": horas_atras})
-
-    await db.commit()
-    return {"criados": criados}
-
-
-@app.delete("/api/debug/seed-coleta-teste", summary="[TEMPORÁRIO] remove as linhas criadas por seed-coleta-teste")
-async def debug_limpar_coleta_teste(ids: str, db: AsyncSession = Depends(get_db)):
-    id_list = [int(i) for i in ids.split(",") if i.strip()]
-    if not id_list:
-        return {"removidos": []}
-    await db.execute(
-        delete(ProgramacaoColeta).where(
-            ProgramacaoColeta.id.in_(id_list),
-            ProgramacaoColeta.protocolo.like("TESTE-%"),
-        )
-    )
-    await db.commit()
-    return {"removidos": id_list}
 
 
 # ── ONDAS DE HOJE ─────────────────────────────────────────────────────────────

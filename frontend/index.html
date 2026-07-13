@@ -325,9 +325,9 @@
                     <div class="h-2 rounded-full"
                          :style="`width:${t.otif}%; background:${t.otif >= t.meta ? '#00A650' : '#DC2626'}`">
                     </div>
-                    <!-- Linha da meta -->
-                    <div class="absolute top-0 h-2 w-0.5 bg-gray-400"
-                         :style="`left:${t.meta}%`"></div>
+                    <!-- Linha da meta (tracejada, p/ diferenciar da barra solida de progresso) -->
+                    <div class="absolute w-0 border-l-2 border-dashed border-gray-500"
+                         :style="`left:${t.meta}%; top:-3px; bottom:-3px;`"></div>
                   </div>
                   <span class="text-xs font-bold w-12 text-right"
                         :class="t.otif >= t.meta ? 'text-green-600' : 'text-red-600'"

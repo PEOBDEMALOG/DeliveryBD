@@ -157,34 +157,15 @@
 
     <!-- SIDEBAR -->
     <aside class="bg-bd w-64 flex-shrink-0 flex flex-col shadow-xl">
-      <!-- Logo BD — SVG 100% inline (nenhuma URL externa): emblema "Burst"
-           (círculo laranja fechado + figura humana central + raios
-           irradiando) em var(--bd-orange) + "BD" em azul (var(--bd-blue)),
-           dentro de um chip branco pra ter contraste sobre a sidebar azul. -->
+      <!-- Logo BD — arquivo oficial da marca (emblema "Burst" + wordmark),
+           servido localmente via StaticFiles em frontend/assets/ (mesmo
+           mount que serve este index.html), sem depender de URL externa
+           no domínio bd.com. Chip branco por trás só porque o PNG já traz
+           fundo branco opaco embutido (sem alpha), pra não destacar bordas
+           sobre a sidebar azul. -->
       <div class="px-6 py-5 border-b border-blue-800">
-        <div class="bg-white rounded-lg px-2.5 py-1.5 inline-flex items-center gap-1.5 mb-2">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" style="width:24px;height:24px;flex-shrink:0;" aria-hidden="true">
-            <circle cx="16" cy="16" r="16" fill="var(--bd-orange)" />
-            <g fill="#FFFFFF">
-              <path d="M14.13,7.20 L16.00,0.80 L17.87,7.20 Z" />
-              <path d="M19.66,7.78 L23.35,5.89 L22.69,9.98 Z" />
-              <path d="M23.79,11.50 L30.46,11.30 L24.95,15.06 Z" />
-              <path d="M24.95,16.94 L27.89,19.86 L23.79,20.50 Z" />
-              <path d="M22.69,22.02 L24.93,28.30 L19.66,24.22 Z" />
-              <path d="M17.87,24.80 L16.00,28.50 L14.13,24.80 Z" />
-              <path d="M12.34,24.22 L7.07,28.30 L9.31,22.02 Z" />
-              <path d="M8.21,20.50 L4.11,19.86 L7.05,16.94 Z" />
-              <path d="M7.05,15.06 L1.54,11.30 L8.21,11.50 Z" />
-              <path d="M9.31,9.98 L8.65,5.89 L12.34,7.78 Z" />
-              <circle cx="16" cy="11" r="3.3" />
-              <path d="M10.5,21.5 C10.5,16.7 12.9,14 16,14 C19.1,14 21.5,16.7 21.5,21.5 Z" />
-            </g>
-          </svg>
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 32" style="height:22px;" aria-label="BD">
-            <text x="0" y="25" font-family="Arial Black,Arial" font-weight="900"
-                  font-size="30" letter-spacing="-0.5" fill="var(--bd-blue)"
-                  stroke="var(--bd-blue)" stroke-width="0.6">BD</text>
-          </svg>
+        <div class="bg-white rounded-lg px-2.5 py-1.5 inline-flex items-center mb-2">
+          <img src="/assets/logo-bd.png" alt="BD" style="height:28px;width:auto;display:block;" />
         </div>
         <div class="flex items-center gap-3">
           <div>

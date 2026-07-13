@@ -318,7 +318,7 @@ class AgenteIngestor:
         num_linha: int
     ) -> str:
 
-        numero = str(row.get("numero_remessa", "")).strip()
+        numero = self._safe_str(row.get("numero_remessa"))
         if not numero:
             raise ValueError("numero_remessa vazio")
 
@@ -376,7 +376,7 @@ class AgenteIngestor:
             numero_empenho  = numero_empenho,
             prazo_empenho   = prazo_empenho,
             nf_emitida      = self._detectar_nf(row),
-            numero_nf       = str(row.get("numero_nf", "") or "").strip() or None,
+            numero_nf       = self._safe_str(row.get("numero_nf")) or None,
             janela_inicio   = janela_inicio,
             janela_fim      = janela_fim,
             janela_critica  = janela_critica,
@@ -393,7 +393,7 @@ class AgenteIngestor:
     async def _resolver_cliente(
         self, row: pd.Series, cd: CentroDistribuicao, origem: str
     ) -> Cliente | None:
-        razao = str(row.get("razao_social_raw", "")).strip()
+        razao = self._safe_str(row.get("razao_social_raw"))
         if not razao:
             return None
 
@@ -405,8 +405,8 @@ class AgenteIngestor:
 
         if not cliente:
             # Cria cliente básico para não bloquear o fluxo
-            uf = str(row.get("uf", "")).strip().upper() or None
-            cidade = str(row.get("cidade", "")).strip() or None
+            uf = self._safe_str(row.get("uf")).upper() or None
+            cidade = self._safe_str(row.get("cidade")) or None
             cliente = Cliente(
                 razao_social    = razao,
                 tipo            = self._inferir_tipo_cliente(razao),
@@ -427,7 +427,7 @@ class AgenteIngestor:
         mapa = MAPA_STATUS_SAP if origem == "SAP" else MAPA_STATUS_UPS
 
         # SAP: usa campo status_raw
-        status_raw = str(row.get("status_raw", "") or "").strip().lower()
+        status_raw = self._safe_str(row.get("status_raw")).lower()
         if status_raw:
             result = mapa.get(status_raw)
             if result:
@@ -435,7 +435,7 @@ class AgenteIngestor:
 
         # UPS: sem coluna Status — verifica sla_raw (pode conter status de entrega)
         if origem == "UPS_WMS":
-            sla_raw = str(row.get("sla_raw", "") or "").strip().lower()
+            sla_raw = self._safe_str(row.get("sla_raw")).lower()
             if sla_raw:
                 result = MAPA_STATUS_UPS.get(sla_raw)
                 if result:
@@ -447,8 +447,8 @@ class AgenteIngestor:
         self, row: pd.Series, origem: str
     ) -> tuple[Any, Any, bool]:
         """Parseia '08h-12h' → (time(8,0), time(12,0), False)"""
-        janela_raw = str(row.get("janela_raw", "") or "").strip()
-        sla_raw    = str(row.get("sla_raw", "") or "").strip()
+        janela_raw = self._safe_str(row.get("janela_raw"))
+        sla_raw    = self._safe_str(row.get("sla_raw"))
         raw        = janela_raw or sla_raw
 
         if not raw or raw.lower() in ("qualquer", "flexível", ""):
@@ -469,10 +469,10 @@ class AgenteIngestor:
     def _detectar_ata(
         self, row: pd.Series
     ) -> tuple[bool, date | None, str | None]:
-        empenho = str(row.get("numero_empenho", "") or "").strip()
+        empenho = self._safe_str(row.get("numero_empenho"))
         prazo_raw = row.get("prazo_empenho")
-        status_raw = str(row.get("status_raw", "") or "").lower()
-        sla_raw = str(row.get("sla_raw", "") or "").lower()
+        status_raw = self._safe_str(row.get("status_raw")).lower()
+        sla_raw = self._safe_str(row.get("sla_raw")).lower()
 
         is_ata = (
             bool(empenho)
@@ -491,7 +491,7 @@ class AgenteIngestor:
         return is_ata, prazo, empenho or None
 
     def _detectar_nf(self, row: pd.Series) -> bool:
-        nf = str(row.get("numero_nf", "") or "").strip().lower()
+        nf = self._safe_str(row.get("numero_nf")).lower()
         return bool(nf) and nf not in ("pendente sap", "pendente", "n/a", "")
 
     def _calcular_prioridade(
@@ -516,7 +516,7 @@ class AgenteIngestor:
         """Hash SHA-256 baseado nos campos-chave da remessa."""
         campos_chave = ["numero_remessa", "peso_kg", "volume_m3", "valor_nf", "numero_nf"]
         dados = "|".join(
-            str(row.get(c, "")).strip() for c in campos_chave
+            self._safe_str(row.get(c)) for c in campos_chave
         )
         return hashlib.sha256(dados.encode()).hexdigest()
 
@@ -558,6 +558,18 @@ class AgenteIngestor:
         return res.scalar_one_or_none()
 
     # ── Utils ─────────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _safe_str(val) -> str:
+        """Converte célula do Excel pra string, tratando NaN/None como "".
+        Sem isso, str(row.get(campo, "") or "") vira a string literal "nan"
+        pra qualquer célula vazia (pandas lê célula vazia como float NaN, e
+        str(nan) == "nan" — não-vazia, então bool("nan" or "") é True). Isso
+        já causou is_ata=True e nf_emitida=True incorretos para remessas com
+        Num.Empenho/NF genuinamente em branco."""
+        if val is None or (isinstance(val, float) and pd.isna(val)):
+            return ""
+        return str(val).strip()
 
     @staticmethod
     def _safe_float(val) -> float | None:

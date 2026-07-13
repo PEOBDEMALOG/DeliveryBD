@@ -28,6 +28,9 @@ data/db/*.db-wal
 data/uploads/
 data/outputs/
 
+# Arquivos de trabalho local para upload manual (não fazem parte do projeto)
+/uploads/
+
 # Logs
 *.log
 logs/

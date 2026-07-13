@@ -196,6 +196,11 @@ class Orquestrador:
         cd_id  = cd_map.get(cd_codigo) if cd_codigo else None
         return await self.monitor.dashboard(cd_id)
 
+    async def dashboard_coletas_pendentes(self, cd_codigo: str | None = None) -> dict:
+        cd_map = {"OSA": settings.CD_OSASCO_ID, "ITJ": settings.CD_ITAJAI_ID}
+        cd_id  = cd_map.get(cd_codigo) if cd_codigo else None
+        return await self.monitor.dashboard_coletas_pendentes(cd_id)
+
     async def verificar_sla_e_alertas(self) -> dict:
         return await self.monitor.verificar_sla()
 

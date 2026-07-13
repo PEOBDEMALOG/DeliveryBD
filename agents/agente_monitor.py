@@ -231,20 +231,18 @@ class AgenteMonitor:
 
         return resultados
 
-    # ── Verificação de SLA ────────────────────────────────────────────────────
+    # ── Coletas aguardando confirmação ────────────────────────────────────────
 
-    async def verificar_sla(self) -> dict[str, Any]:
+    async def _coletas_pendentes_confirmacao(self) -> list[dict[str, Any]]:
         """
-        Roda periodicamente (ex: a cada 2h via scheduler).
-        Gera alertas para:
-        - Remessas em rota sem update há mais de 4h
-        - Coletas não confirmadas em mais de SLA da transportadora
-        - Remessas com janela de entrega vencida e status != entregue
+        Fonte única de "ProgramacaoColeta enviada, ainda sem confirmação do
+        veículo, com o tempo decorrido e o SLA da transportadora já calculados.
+        Reaproveitada por verificar_sla() (gera alerta se excedeu o SLA) e por
+        dashboard_coletas_pendentes() (agregado por transportadora pro card do
+        dashboard) — mesmo cuidado já aplicado antes pra motivo_pendencia(),
+        pra não duplicar a regra de comparação em dois lugares.
         """
-        alertas_gerados = 0
         agora = datetime.utcnow()
-
-        # 1. Coletas não confirmadas dentro do SLA
         resultado = await self.db.execute(
             select(ProgramacaoColeta)
             .options(
@@ -261,25 +259,89 @@ class AgenteMonitor:
         )
         programacoes = resultado.scalars().all()
 
+        pendentes = []
         for prog in programacoes:
             if not prog.enviado_em:
                 continue
             horas_sem_resposta = (agora - prog.enviado_em).total_seconds() / 3600
             sla_h = prog.transportadora.sla_resposta_h if prog.transportadora else 2
+            pendentes.append({
+                "prog":               prog,
+                "transportadora":     prog.transportadora,
+                "onda":               prog.onda,
+                "horas_sem_resposta": horas_sem_resposta,
+                "sla_h":              sla_h,
+                "excedeu":            horas_sem_resposta > sla_h,
+                "cd_id":              prog.onda.plano.cd_id if prog.onda and prog.onda.plano else None,
+            })
+        return pendentes
 
-            if horas_sem_resposta > sla_h:
-                await self._criar_alerta_raw(
-                    tipo       = "coleta_sem_confirmacao",
-                    severidade = "alta",
-                    titulo     = f"Coleta sem confirmação — {prog.onda.nome if prog.onda else prog.id}",
-                    descricao  = (
-                        f"Programação enviada há {horas_sem_resposta:.1f}h para "
-                        f"{prog.transportadora.nome if prog.transportadora else 'transportadora'} "
-                        f"sem confirmação de veículo. SLA: {sla_h}h."
-                    ),
-                    cd_id      = prog.onda.plano.cd_id if prog.onda and prog.onda.plano else None,
-                )
-                alertas_gerados += 1
+    async def dashboard_coletas_pendentes(self, cd_id: int | None = None) -> dict[str, Any]:
+        """Agregado por transportadora pro card "Turnaround de Coleta" do dashboard."""
+        pendentes = await self._coletas_pendentes_confirmacao()
+        if cd_id:
+            pendentes = [p for p in pendentes if p["cd_id"] == cd_id]
+
+        por_transportadora: dict[int, dict[str, Any]] = {}
+        for item in pendentes:
+            t = item["transportadora"]
+            if not t:
+                continue
+            entry = por_transportadora.setdefault(t.id, {
+                "transportadora_id": t.id,
+                "transportadora":    t.nome,
+                "sla_h":             t.sla_resposta_h,
+                "total_pendentes":   0,
+                "excedidos":         0,
+                "horas":             [],
+            })
+            entry["total_pendentes"] += 1
+            entry["horas"].append(item["horas_sem_resposta"])
+            if item["excedeu"]:
+                entry["excedidos"] += 1
+
+        resultado = []
+        for entry in por_transportadora.values():
+            horas = entry.pop("horas")
+            resultado.append({
+                **entry,
+                "horas_media_espera": round(sum(horas) / len(horas), 1) if horas else 0.0,
+                "horas_max_espera":   round(max(horas), 1) if horas else 0.0,
+            })
+        resultado.sort(key=lambda x: x["transportadora"])
+        return {"transportadoras": resultado, "gerado_em": datetime.utcnow().isoformat()}
+
+    # ── Verificação de SLA ────────────────────────────────────────────────────
+
+    async def verificar_sla(self) -> dict[str, Any]:
+        """
+        Roda periodicamente (ex: a cada 2h via scheduler).
+        Gera alertas para:
+        - Remessas em rota sem update há mais de 4h
+        - Coletas não confirmadas em mais de SLA da transportadora
+        - Remessas com janela de entrega vencida e status != entregue
+        """
+        alertas_gerados = 0
+
+        # 1. Coletas não confirmadas dentro do SLA
+        for item in await self._coletas_pendentes_confirmacao():
+            if not item["excedeu"]:
+                continue
+            prog = item["prog"]
+            await self._criar_alerta_raw(
+                tipo       = "coleta_sem_confirmacao",
+                severidade = "alta",
+                titulo     = f"Coleta sem confirmação — {item['onda'].nome if item['onda'] else prog.id}",
+                descricao  = (
+                    f"Programação enviada há {item['horas_sem_resposta']:.1f}h para "
+                    f"{item['transportadora'].nome if item['transportadora'] else 'transportadora'} "
+                    f"sem confirmação de veículo. SLA: {item['sla_h']}h."
+                ),
+                cd_id      = item["cd_id"],
+            )
+            alertas_gerados += 1
+
+        agora = datetime.utcnow()
 
         # 2. Remessas em rota sem update há mais de 4h
         resultado2 = await self.db.execute(

@@ -321,6 +321,17 @@ class AgenteIngestor:
         numero = self._safe_str(row.get("numero_remessa"))
         if not numero:
             raise ValueError("numero_remessa vazio")
+        # Limite lido do próprio schema (Remessa.numero_remessa = String(20))
+        # em vez de hardcoded, pra nunca dessincronizar se a coluna mudar.
+        # Sem essa checagem, um valor maior que o limite estourava como
+        # StringDataRightTruncationError cru do banco (HTTP 500) em vez de
+        # um erro tratado — achado durante a validação da demo de 13/07.
+        limite = Remessa.__table__.c.numero_remessa.type.length
+        if limite and len(numero) > limite:
+            raise ValueError(
+                f"Número de remessa excede o limite de {limite} caracteres: "
+                f"'{numero}' ({len(numero)} caracteres)"
+            )
 
         # Calcula hash para deduplicação
         hash_val = self._calcular_hash(row, origem)

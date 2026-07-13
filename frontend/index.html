@@ -9,7 +9,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <style>
     :root {
       --bd-blue:        #005898;
@@ -316,50 +315,25 @@
           <!-- OTIF + Alertas -->
           <div class="grid grid-cols-3 gap-4">
 
-            <!-- OTIF Gauge -->
+            <!-- Performance por Transportadora (donut de OTIF removido — Correção 5) -->
             <div class="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
-              <div class="text-sm font-semibold text-gray-700 mb-4">OTIF do Período</div>
-              <div class="flex items-center justify-center">
-                <div class="relative w-36 h-36">
-                  <canvas id="otifChart"></canvas>
-                  <div class="absolute inset-0 flex flex-col items-center justify-center">
-                    <span :style="otifPct >= 95 ? 'color:#00A650' : 'color:#DC2626'"
-                          class="text-2xl font-black" x-text="otifPct.toFixed(1) + '%'"></span>
-                    <span class="text-xs text-gray-400">meta 95%</span>
-                  </div>
-                </div>
-              </div>
-              <div class="mt-3 grid grid-cols-2 gap-2 text-xs">
-                <div class="text-center">
-                  <div class="font-bold text-green-600" x-text="dashboard.remessas?.entregue || 0"></div>
-                  <div class="text-gray-400">Entregues</div>
-                </div>
-                <div class="text-center">
-                  <div class="font-bold text-red-500"
-                       x-text="(dashboard.remessas?.tentativa || 0) + (dashboard.remessas?.devolvido || 0)"></div>
-                  <div class="text-gray-400">Falhas</div>
-                </div>
-              </div>
-
-              <div class="mt-4 border-t pt-4">
-                <div class="text-sm font-semibold text-gray-600 mb-2">Performance por Transportadora</div>
-                <template x-for="t in otifTransportadoras" :key="t.nome">
-                  <div class="flex items-center gap-2 mb-2">
-                    <span class="text-xs w-32 truncate" x-text="t.nome"></span>
-                    <div class="flex-1 bg-gray-100 rounded-full h-2 relative">
-                      <div class="h-2 rounded-full"
-                           :style="`width:${t.otif}%; background:${t.otif >= t.meta ? '#00A650' : '#DC2626'}`">
-                      </div>
-                      <!-- Linha da meta -->
-                      <div class="absolute top-0 h-2 w-0.5 bg-gray-400"
-                           :style="`left:${t.meta}%`"></div>
+              <div class="text-sm font-semibold text-gray-700 mb-4">Performance por Transportadora</div>
+              <template x-for="t in otifTransportadoras" :key="t.nome">
+                <div class="flex items-center gap-2 mb-2">
+                  <span class="text-xs w-32 truncate" x-text="t.nome"></span>
+                  <div class="flex-1 bg-gray-100 rounded-full h-2 relative">
+                    <div class="h-2 rounded-full"
+                         :style="`width:${t.otif}%; background:${t.otif >= t.meta ? '#00A650' : '#DC2626'}`">
                     </div>
-                    <span class="text-xs font-bold w-12 text-right"
-                          :class="t.otif >= t.meta ? 'text-green-600' : 'text-red-600'"
-                          x-text="t.otif.toFixed(1) + '%'"></span>
+                    <!-- Linha da meta -->
+                    <div class="absolute top-0 h-2 w-0.5 bg-gray-400"
+                         :style="`left:${t.meta}%`"></div>
                   </div>
-                </template>
-              </div>
+                  <span class="text-xs font-bold w-12 text-right"
+                        :class="t.otif >= t.meta ? 'text-green-600' : 'text-red-600'"
+                        x-text="t.otif.toFixed(1) + '%'"></span>
+                </div>
+              </template>
             </div>
 
             <!-- Status das remessas -->
@@ -2471,8 +2445,6 @@
         { label: 'Agente 5 — Monitor',       desc: 'Atualiza dashboard de rastreio em tempo real', done: false, running: false },
       ],
 
-      otifChart: null,
-
       _aplicarSessao(dados) {
         this.token        = dados.token;
         this.usuarioNome  = dados.nome;
@@ -2653,7 +2625,6 @@
           const res = await fetch(`/api/dashboard${params}`);
           this.dashboard = await res.json();
           this.alertasCriticos = this.dashboard.alertas?.critica || 0;
-          this.$nextTick(() => this.renderOtifChart());
           await this.loadOndas();
           await this.loadProximosDias();
           const rt = await fetch('/api/transportadoras/estatisticas');
@@ -2844,54 +2815,6 @@
           this.remessasOndaDashboard = data.remessas || [];
         } catch(e) { console.error('remessas_onda_dashboard:', e); }
         this.remessasOndaDashboardCarregando = false;
-      },
-
-      renderOtifChart() {
-        const canvas = document.getElementById('otifChart');
-        if (!canvas || !document.body.contains(canvas)) return;
-
-        const val  = this.otifPct;
-        const rest = Math.max(0, 100 - val);
-        const color = val >= 95 ? '#00A650' : val >= 85 ? '#F59E0B' : '#EF4444';
-
-        // Reaproveita a instância existente (update em vez de destroy+new a
-        // cada refresh de 15s) — evita corrida entre o loop de animação do
-        // Chart.js e uma instância já destruída, que causava getContext(null).
-        // O try/catch cobre uma corrida secundária do próprio Chart.js: se
-        // update() for chamado antes do setup interno do plugin de legenda
-        // terminar (ex.: duas chamadas quase simultâneas logo no load inicial),
-        // ele lança "Cannot set properties of undefined (setting 'fullSize')" —
-        // inofensivo, a próxima atualização (15s depois) corrige o desenho.
-        if (this.otifChart) {
-          try {
-            this.otifChart.data.datasets[0].data = [val, rest];
-            this.otifChart.data.datasets[0].backgroundColor = [color, '#F3F4F6'];
-            this.otifChart.update();
-          } catch (e) {
-            console.warn('[PEO-BD] Atualização do gráfico OTIF ignorada (corrida interna do Chart.js):', e);
-          }
-          return;
-        }
-
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-        this.otifChart = new Chart(ctx, {
-          type: 'doughnut',
-          data: {
-            datasets: [{
-              data: [val, rest],
-              backgroundColor: [color, '#F3F4F6'],
-              borderWidth: 0,
-              borderRadius: 4,
-            }]
-          },
-          options: {
-            cutout: '75%',
-            plugins: { legend: { display: false }, tooltip: { enabled: false } },
-            responsive: true,
-            maintainAspectRatio: true,
-          }
-        });
       },
 
       handleDrop(e) {

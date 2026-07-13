@@ -405,17 +405,20 @@ async def debug_seed_coleta_teste(db: AsyncSession = Depends(get_db)):
         return {"erro": "Nenhuma onda de OSA encontrada para usar como referência (FK)."}
 
     res_transp = await db.execute(
-        select(Transportadora).where(Transportadora.codigo.in_(["DHL", "JADLOG"]))
+        select(Transportadora).where(Transportadora.codigo.in_(["DHL", "JADLOG", "TNT"]))
     )
     transportadoras = {t.codigo: t for t in res_transp.scalars().all()}
 
     agora = datetime.utcnow()
-    # (codigo, horas_desde_envio) — cobre dentro-do-SLA e excedido pra cada transportadora
+    # (codigo, horas_desde_envio) — cobre dentro-do-SLA e excedido pra cada transportadora,
+    # + TNT 100% dentro do SLA (0 excedidos) pra confirmar visualmente a linha SEM destaque
+    # vermelho, contrastando com DHL/JADLOG que tem pelo menos 1 excedido cada.
     cenarios = [
         ("DHL",    0.5),   # SLA 2h — dentro
         ("DHL",    3.5),   # SLA 2h — excedeu
         ("JADLOG", 1.0),   # SLA 4h — dentro
         ("JADLOG", 5.0),   # SLA 4h — excedeu
+        ("TNT",    0.5),   # SLA 3h — dentro (unico pendente desta transportadora)
     ]
 
     criados = []

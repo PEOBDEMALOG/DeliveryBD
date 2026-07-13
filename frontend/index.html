@@ -345,7 +345,7 @@
               <div class="space-y-2">
                 <template x-for="t in coletasPendentes" :key="t.transportadora_id">
                   <div class="flex items-center justify-between gap-2 p-2.5 rounded-lg"
-                       :class="t.excedidos > 0 ? 'bg-red-50' : (t.total_pendentes > 0 ? 'bg-gray-50' : 'bg-green-50')">
+                       :class="t.excedidos > 0 ? 'bg-red-50' : (t.total_pendentes > 0 ? 'bg-orange-50' : 'bg-green-50')">
                     <div>
                       <div class="text-xs font-semibold text-gray-700" x-text="t.transportadora"></div>
                       <div class="text-xs text-gray-400"
@@ -359,7 +359,8 @@
                       </template>
                       <template x-if="t.total_pendentes > 0">
                         <div>
-                          <div class="text-sm font-bold" :class="t.excedidos > 0 ? 'text-red-600' : 'text-gray-700'"
+                          <div class="text-sm font-bold" :class="t.excedidos > 0 ? 'text-red-600' : ''"
+                               :style="t.excedidos > 0 ? '' : 'color:var(--bd-orange)'"
                                x-text="t.total_pendentes + (t.total_pendentes === 1 ? ' pendente' : ' pendentes')"></div>
                           <div x-show="t.excedidos > 0" class="text-xs font-semibold text-red-600"
                                x-text="t.excedidos + ' excedeu' + (t.excedidos === 1 ? '' : 'ram') + ' o SLA'"></div>

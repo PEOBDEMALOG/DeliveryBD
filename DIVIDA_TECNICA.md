@@ -31,6 +31,55 @@ ser trocado manualmente por quem tem acesso a essa conta — gerar novo valor
 com `openssl rand -hex 32` e não reaproveitar nenhum valor já usado em outro
 ambiente. Ação do responsável do projeto, não do agente.
 
+### Catálogo de erros (tipos_erro) desalinhado do código real
+Levantamento feito em 12/07/2026 (`scripts/seed_tipos_erro.py`,
+`agents/agente_resolvedor.py`, `agents/agente_classificador.py`,
+`agents/agente_ingestor.py`).
+
+**6 dos 14 tipos catalogados nunca são disparados organicamente por nenhum
+caminho de código** — existem só como linha na tabela `tipos_erro`, e só
+aparecem no sistema se alguém chamar `AgenteResolvedor.tratar_erro()`
+manualmente (é o que `scripts/simular_erros_demo.py` faz, de propósito, pra
+demo):
+- `NF_DUPLICADA` — dedup real é silencioso (`_processar_linha` retorna
+  `"duplicata"` sem nunca chamar o Resolvedor)
+- `HASH_DUPLICADO` — mesmo caso, dedup por hash é silencioso
+- `CLIENTE_NAO_RECONHECIDO` — `_resolver_cliente` cria um cliente novo
+  silenciosamente em vez de reportar erro
+- `REGIAO_INVALIDA` — `_agrupar_por_regiao` cai num fallback `"default"`
+  silencioso, nunca reporta
+- `VALOR_FORA_FAIXA` — não existe nenhuma validação de faixa de
+  valor/peso em lugar nenhum do código
+- `ATA_VENCIDA` — o comportamento real de ATA vencida acontece via
+  **alerta `ata_prazo` do Classificador** (taxonomia completamente
+  separada, ver abaixo) — este código do catálogo nunca dispara
+
+(`TIMEOUT_SAP`, `TIMEOUT_UPS`, `FALHA_API_TRANSPORTADORA` e
+`BANCO_INDISPONIVEL` **têm** gatilho real no código via
+`_mapear_codigo_erro()` em `orquestrador.py` — só não são simuláveis por
+upload de arquivo porque exigem falha real de rede/SMTP/banco. Diferente
+categoria de problema, não incluídos nos 6 acima.)
+
+**Acoplamento frágil identificado:** a validação de schema/CD (Correção 7,
+`agente_ingestor.py`) não tem código de erro dedicado — é classificada como
+`COLUNA_AUSENTE` ou `CD_INDISPONIVEL` só porque a mensagem de exceção
+contém as palavras "coluna"/"cd não", que `_mapear_codigo_erro()` casa por
+substring. Não é by design — se o texto da mensagem de erro mudar no
+futuro (ex: numa revisão de UX das mensagens), a classificação quebra
+silenciosamente sem nenhum teste acusar.
+
+**Achado relacionado (12/07/2026):** `numero_remessa` é `VARCHAR(20)` no
+banco, mas não há validação de tamanho na ingestão — um valor maior gera
+`StringDataRightTruncationError` cru, propagado como `HTTP 500` sem
+mensagem amigável, em vez de um erro tratado (ex: `COLUNA_AUSENTE`/erro de
+validação). Não corrigido agora — fora do escopo desta tarefa.
+
+**Recomendação:** antes de qualquer cliente real usar o sistema em
+produção, ou (a) implementar de fato os gatilhos que faltam para os 6
+tipos acima, ou (b) remover do catálogo os que não têm intenção real de
+implementação — hoje a tabela `tipos_erro` passa a impressão de cobertura
+que o código não entrega.
+
 ## Concluído (registro, não pendência)
 
 ### Cálculo de motivo de pendência unificado no backend

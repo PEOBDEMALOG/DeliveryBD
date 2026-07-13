@@ -80,6 +80,28 @@ tipos acima, ou (b) remover do catálogo os que não têm intenção real de
 implementação — hoje a tabela `tipos_erro` passa a impressão de cobertura
 que o código não entrega.
 
+### Cron do Resolvedor roda só 1x/dia — limitação do plano Vercel, não bug
+`vercel.json` agenda `/api/resolvedor/executar` só às 6h da manhã
+(`"schedule": "0 6 * * *"`), confirmado em `api/main.py:1868-1887`
+(comentário explícito: *"Vercel Cron, 1x/dia — limite do plano Hobby"*) e
+em `README.md:301`. Verificado (13/07/2026, durante o diagnóstico da
+feature de confirmação de coleta) que essa frequência **é a limitação real
+do plano Vercel atual** (Hobby restringe cron a no mínimo 1x/dia) — não é
+uma divergência acidental de configuração nem um cron mais frequente que
+parou de funcionar.
+
+**Risco:** erros pendentes de reprocessamento pelo Resolvedor podem ficar
+até 24h sem nova tentativa automática, dependendo da hora em que o erro
+ocorreu em relação à janela das 6h.
+
+**Recomendação:** avaliar upgrade de plano Vercel (para permitir cron mais
+frequente) antes de uso real com cliente — especialmente relevante para a
+futura cascata de realocação por SLA estourado (Fase 2 da feature de
+Confirmação de Coleta por E-mail, ver
+`ESPECIFICACAO_CONFIRMACAO_COLETA.md`), que depende de execução frequente
+para ter valor prático: uma cascata que só reavalia 1x/dia não serve para
+destravar coletas paradas em questão de horas.
+
 ## Concluído (registro, não pendência)
 
 ### Cálculo de motivo de pendência unificado no backend

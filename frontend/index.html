@@ -157,13 +157,19 @@
 
     <!-- SIDEBAR -->
     <aside class="bg-bd w-64 flex-shrink-0 flex flex-col shadow-xl">
-      <!-- Logo BD -->
+      <!-- Logo BD — SVG 100% inline (nenhuma URL externa): ícone estrela em
+           laranja (var(--bd-orange)) + "BD" em azul (var(--bd-blue)), dentro
+           de um chip branco pra ter contraste sobre a sidebar azul. -->
       <div class="px-6 py-5 border-b border-blue-800">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 40" class="bd-logo"
-             style="height:28px; margin-bottom:8px;" fill="white" aria-label="BD">
-          <text x="0" y="30" font-family="Arial Black,Arial" font-weight="900"
-                font-size="36" letter-spacing="-1">BD</text>
-        </svg>
+        <div class="bg-white rounded-lg px-2.5 py-1.5 inline-flex items-center gap-1.5 mb-2">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" style="width:20px;height:20px;flex-shrink:0;" aria-hidden="true">
+            <path d="M16 0 L20 12 L32 16 L20 20 L16 32 L12 20 L0 16 L12 12 Z" fill="var(--bd-orange)" />
+          </svg>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 32" style="height:20px;" aria-label="BD">
+            <text x="0" y="25" font-family="Arial Black,Arial" font-weight="900"
+                  font-size="30" letter-spacing="-1" fill="var(--bd-blue)">BD</text>
+          </svg>
+        </div>
         <div class="flex items-center gap-3">
           <div>
             <div class="text-white font-bold text-sm leading-tight">PEO-BD</div>

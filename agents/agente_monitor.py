@@ -18,7 +18,7 @@ from sqlalchemy.orm import selectinload
 from core.config import settings
 from core.db import AsyncSessionLocal
 from core.historico import HistoricoService
-from core.models import Alerta, EventoRastreio, Remessa, ProgramacaoColeta, Onda, OndaRemessa
+from core.models import Alerta, EventoRastreio, Remessa, ProgramacaoColeta, Onda, OndaRemessa, Transportadora
 
 logger = logging.getLogger(__name__)
 
@@ -277,36 +277,45 @@ class AgenteMonitor:
         return pendentes
 
     async def dashboard_coletas_pendentes(self, cd_id: int | None = None) -> dict[str, Any]:
-        """Agregado por transportadora pro card "Turnaround de Coleta" do dashboard."""
+        """
+        Agregado por transportadora pro card "Turnaround de Coleta" do dashboard.
+
+        Enumera TODAS as transportadoras ativas (não só as que têm pendência) —
+        quem está com 0 pendentes precisa aparecer explicitamente como "tudo em
+        dia" na UI, não desaparecer da lista. Omitir silenciosamente pareceria
+        dado ausente/bug numa demo, mesma lição já aplicada às ondas vazias.
+        """
+        filtro_transp = [Transportadora.ativo == True]  # noqa: E712
+        if cd_id:
+            filtro_transp.append(Transportadora.cd_id == cd_id)
+        res_transp = await self.db.execute(select(Transportadora).where(and_(*filtro_transp)))
+        todas_transportadoras = res_transp.scalars().all()
+
         pendentes = await self._coletas_pendentes_confirmacao()
         if cd_id:
             pendentes = [p for p in pendentes if p["cd_id"] == cd_id]
 
-        por_transportadora: dict[int, dict[str, Any]] = {}
+        horas_por_transportadora: dict[int, list[float]] = {}
+        excedidos_por_transportadora: dict[int, int] = {}
         for item in pendentes:
             t = item["transportadora"]
             if not t:
                 continue
-            entry = por_transportadora.setdefault(t.id, {
-                "transportadora_id": t.id,
-                "transportadora":    t.nome,
-                "sla_h":             t.sla_resposta_h,
-                "total_pendentes":   0,
-                "excedidos":         0,
-                "horas":             [],
-            })
-            entry["total_pendentes"] += 1
-            entry["horas"].append(item["horas_sem_resposta"])
+            horas_por_transportadora.setdefault(t.id, []).append(item["horas_sem_resposta"])
             if item["excedeu"]:
-                entry["excedidos"] += 1
+                excedidos_por_transportadora[t.id] = excedidos_por_transportadora.get(t.id, 0) + 1
 
         resultado = []
-        for entry in por_transportadora.values():
-            horas = entry.pop("horas")
+        for t in todas_transportadoras:
+            horas = horas_por_transportadora.get(t.id, [])
             resultado.append({
-                **entry,
-                "horas_media_espera": round(sum(horas) / len(horas), 1) if horas else 0.0,
-                "horas_max_espera":   round(max(horas), 1) if horas else 0.0,
+                "transportadora_id":   t.id,
+                "transportadora":      t.nome,
+                "sla_h":               t.sla_resposta_h,
+                "total_pendentes":     len(horas),
+                "excedidos":           excedidos_por_transportadora.get(t.id, 0),
+                "horas_media_espera":  round(sum(horas) / len(horas), 1) if horas else 0.0,
+                "horas_max_espera":    round(max(horas), 1) if horas else 0.0,
             })
         resultado.sort(key=lambda x: x["transportadora"])
         return {"transportadoras": resultado, "gerado_em": datetime.utcnow().isoformat()}

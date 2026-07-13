@@ -384,6 +384,33 @@ async def dashboard_coletas_pendentes(
     return await orq.dashboard_coletas_pendentes(cd_codigo)
 
 
+# ── [TEMPORÁRIO] Debug — só leitura, sem escrever nada — cobertura real de
+# TabelaPrecoTransportadora.sla_confirmacao_h, pra decidir a especificacao
+# de confirmacao de coleta (ESPECIFICACAO_CONFIRMACAO_COLETA.md). Remover
+# apos a resposta.
+@app.get("/api/debug/cobertura-sla-confirmacao", summary="[TEMPORÁRIO] cobertura de sla_confirmacao_h")
+async def debug_cobertura_sla_confirmacao(db: AsyncSession = Depends(get_db)):
+    res = await db.execute(
+        select(TabelaPrecoTransportadora).where(TabelaPrecoTransportadora.ativo == True)
+    )
+    linhas = res.scalars().all()
+    total = len(linhas)
+    com_sla = sum(1 for p in linhas if p.sla_confirmacao_h is not None)
+    sem_sla = total - com_sla
+    por_transportadora: dict[int, dict] = {}
+    for p in linhas:
+        e = por_transportadora.setdefault(p.transportadora_id, {"total": 0, "com_sla": 0})
+        e["total"] += 1
+        if p.sla_confirmacao_h is not None:
+            e["com_sla"] += 1
+    return {
+        "total_linhas_ativas": total,
+        "com_sla_confirmacao_h": com_sla,
+        "sem_sla_confirmacao_h": sem_sla,
+        "por_transportadora_id": por_transportadora,
+    }
+
+
 # ── ONDAS DE HOJE ─────────────────────────────────────────────────────────────
 
 @app.get("/api/ondas-hoje", summary="Ondas planejadas para um dia (default: hoje)")

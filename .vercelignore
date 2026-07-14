@@ -1,7 +1,6 @@
 data/db/
 *.db
 *.sqlite
-demo_presentation/
 .env
 __pycache__/
 *.pyc

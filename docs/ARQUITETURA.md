@@ -92,8 +92,10 @@ peo_bd/
 │   ├── seed_transportadoras.py    # Ajusta meta_otif por transportadora
 │   ├── criar_indexes.py           # Índices de performance (Etapa 1 do stress test)
 │   ├── seed_stress_test.py        # Gera histórico realista em volume (Etapa 2)
-│   ├── executar_testes.py         # Checklist automatizado de performance/corretude (Etapa 3)
 │   └── gerar_backlog_demos.py / gerar_planilha_cotacao.py / simular_erros_demo.py
+├── tests/                          # validação — não é pytest, são scripts de entrada
+│   ├── executar_testes.py         # Checklist automatizado de performance/corretude (Etapa 3)
+│   └── testar_offline.py          # Suíte Playwright do Modo de Contingência offline
 ├── requirements.txt
 ├── vercel.json                    # Deploy serverless (build + cron do Resolvedor)
 └── README.md
@@ -248,11 +250,11 @@ CDs) antes de qualquer apresentação, foi construída uma infra de 3 etapas:
    python scripts/seed_stress_test.py --periodo ano --modo limpo
    # periodos: semana | mes | trimestre | semestre | nove_meses | ano
    ```
-3. **`scripts/executar_testes.py`** — checklist automatizado (T01–T12) que
+3. **`tests/executar_testes.py`** — checklist automatizado (T01–T12) que
    roda contra a API de pé (local ou deployada), mede tempo de resposta e
    valida performance, corretude e capacidade:
    ```bash
-   python scripts/executar_testes.py --base-url http://localhost:8000 --periodo ano
+   python tests/executar_testes.py --base-url http://localhost:8000 --periodo ano
    ```
    Gera um relatório do tipo:
    ```

@@ -91,21 +91,21 @@ estilo novo numa PR isolada:
 
 ---
 
-## 4. Como validar seu trabalho (scripts existentes)
+## 4. Como validar seu trabalho (tests/ e scripts/)
 
 Não há `pytest`/`unittest` no projeto. O que existe hoje:
 
-- **`scripts/executar_testes.py`** — checklist automatizado (T01–T12) de
+- **`tests/executar_testes.py`** — checklist automatizado (T01–T12) de
   performance/corretude/capacidade, roda contra a API já de pé (local ou
   deployada):
   ```bash
-  python scripts/executar_testes.py --base-url http://localhost:8000 --periodo ano
+  python tests/executar_testes.py --base-url http://localhost:8000 --periodo ano
   ```
   Detalhe completo (junto com `criar_indexes.py` e `seed_stress_test.py`,
   que preparam o volume de dados usado por esse checklist) em
   `ARQUITETURA.md` → "Infra de teste de stress".
 
-- **`scripts/testar_offline.py`** — suíte de validação do Modo de
+- **`tests/testar_offline.py`** — suíte de validação do Modo de
   Contingência offline: sobe uma instância isolada do backend (SQLite em
   pasta temporária) e dirige um Chromium real via Playwright, simulando
   quedas de conexão reais e interceptadas. Rode antes de mexer em

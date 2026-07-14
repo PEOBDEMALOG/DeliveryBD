@@ -33,6 +33,30 @@ mais recentemente, uma infraestrutura própria de teste de carga.
 
 ---
 
+## Stack técnica
+
+**Backend** — Python 3.11+, FastAPI (API REST + middleware de auth),
+SQLAlchemy 2.0 assíncrono (`asyncpg` em produção/Postgres, `aiosqlite` em
+dev local), Pydantic (schemas de request/response), `python-jose` (JWT
+HS256), `python-multipart` (upload), `pandas`/`openpyxl`/`xlrd` (leitura de
+planilhas SAP/UPS WMS), `reportlab` (geração de PDF server-side), SDK da
+Anthropic (Assistente de Diagnóstico), envio de e-mail via SMTP e/ou Resend.
+Lista completa e versões exatas em `requirements.txt`.
+
+**Frontend** — SPA em arquivo único (`frontend/index.html`), sem build step:
+Alpine.js (reatividade/estado), Tailwind CSS via CDN (estilo), SheetJS/`xlsx.js`
+(leitura de planilha client-side no Modo de Contingência) e jsPDF (geração de
+PDF no cliente em alguns fluxos, complementar ao `reportlab` do backend).
+
+**Banco** — Postgres (Supabase) em produção e teste; SQLite local como
+fallback só para desenvolvimento rápido (não suportado no Vercel).
+
+**Infra/deploy** — Vercel (serverless, `@vercel/python`), Vercel Cron para o
+Agente Resolvedor. Ver `WORKFLOW.md` para os dois ambientes (`origin`/
+`producao`) e a regra de promoção entre eles.
+
+---
+
 ## Estrutura do projeto
 
 ```
@@ -141,7 +165,10 @@ curl -X POST http://localhost:8000/api/auth/login \
 
 ---
 
-## Arquitetura dos agentes
+## Arquitetura dos agentes (7 ao todo)
+
+6 agentes formam o pipeline sequencial disparado por upload; o 7º
+(Assistente) roda à parte, sob demanda.
 
 ```
 [UPLOAD CSV/XLSX]
@@ -181,9 +208,27 @@ curl -X POST http://localhost:8000/api/auth/login \
 │  RESOLVEDOR     │  pendências; escala para humano quando necessário
 └─────────────────┘
 ```
-O **Assistente de Diagnóstico** (`agente_assistente.py`) roda à parte, como
-chat contextual (via Claude) sobre um erro específico do Painel de
-Diagnóstico — não faz parte do pipeline sequencial acima.
+**Agente 7 — ASSISTENTE** (`agente_assistente.py`): chat contextual via
+Claude, acionado sob demanda (não roda no pipeline automático). Recebe o
+tipo de erro em foco no Painel de Diagnóstico (ou nenhum, no botão flutuante
+geral) mais um snapshot do estado do sistema — já filtrado pelo CD do
+usuário — e responde perguntas em linguagem natural sobre o que aconteceu e
+o que fazer a respeito.
+
+---
+
+## Ambientes e promoção para produção
+
+O projeto roda em dois ambientes com repositórios git remotos separados
+(`origin` para teste, `producao` para o ambiente real usado em
+apresentações) — cada um com seu próprio deploy Vercel e banco Supabase
+independente. Toda mudança começa em `origin`; a promoção para `producao`
+é manual e só acontece após validação explícita.
+
+A tabela dos dois ambientes, as regras de promoção e os comandos exatos
+vivem só em `WORKFLOW.md` (não duplicados aqui) — inclusive o checklist
+obrigatório de teste de vazamento entre CDs antes do primeiro upload real
+em produção.
 
 ---
 

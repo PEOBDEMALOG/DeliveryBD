@@ -17,6 +17,11 @@ Resumo do fluxo:
 1. Python 3.11+, `pip install -r requirements.lock.txt` (versão exata,
    reproduz CI/produção — `requirements.txt` é só a lista de
    dependências diretas, usada pra atualizar versão deliberadamente).
+   Opcional: `pip install -e .` empacota o projeto (`pyproject.toml`,
+   layout flat) além de instalar as dependências — evita depender do
+   `cwd` ser a raiz do projeto pra rodar scripts. Não é o fluxo padrão
+   (produção no Vercel não faz isso), ver `ARQUITETURA.md` → "Setup
+   rápido (local)".
 2. Copiar `.env.example` → `.env` e preencher (nomes das variáveis abaixo —
    **nunca peça os valores reais por chat/mensagem**; peça ao responsável
    do projeto ou copie do cofre de credenciais que a equipe usa).

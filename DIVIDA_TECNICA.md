@@ -278,6 +278,27 @@ requirements.txt` num ambiente limpo antes de assumir que a versão
 "patched" citada no CVE é a escolha certa — o patch de uma lib pode
 empurrar uma dependência transitiva pra uma versão pior.
 
+### Duplicação de BASE_DIR entre api/main.py e core/config.py (14/07/2026)
+`api/main.py` calculava `BASE_DIR` de forma independente
+(`Path(__file__).resolve().parent.parent`), duplicando exatamente o mesmo
+cálculo já feito em `core/config.py`. As duas contas sempre resolviam pro
+mesmo valor — mas por coincidência de estrutura de pastas, não porque uma
+dependia da outra; um refactor que movesse só um dos dois arquivos
+quebraria essa coincidência silenciosamente, sem nenhum teste acusar.
+Nunca tinha sido formalmente registrado aqui como pendência — só existia
+como comentário no código.
+
+**Corrigido no commit `ab2ee49`**, durante o empacotamento do projeto como
+pacote instalável (`pyproject.toml`, `pip install -e .`, ver
+`docs/ARQUITETURA.md` → "Setup rápido (local)"): `api/main.py` passou a
+importar `BASE_DIR` de `core.config` em vez de recalculá-lo (`FRONTEND_DIR`
+derivado do mesmo valor importado). Confirmado `BASE_DIR is core_base_dir
+→ True` (mesmo objeto, não só mesmo valor). Validado depois da mudança: dashboard
+autenticado como `timoteo`/OSA e `carlos`/ITJ (dados corretos e isolados
+por CD), frontend estático servido normalmente (`FRONTEND_DIR` resolvendo
+certo), e suíte `tests/testar_offline.py` (Playwright) completa sem
+regressão.
+
 ### Cálculo de motivo de pendência unificado no backend
 Antes: `motivoBloqueio(r)` duplicava no frontend (`index.html`) a mesma
 lógica de `_pendentes_detalhe()` no backend (`agents/agente_monitor.py`).

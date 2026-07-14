@@ -50,7 +50,9 @@ frente, todo commit relevante ganha uma linha nova aqui — ver
 - `api/main.py` deixa de calcular `BASE_DIR` de forma independente e
   passa a importar de `core.config` — as duas contas sempre resolviam
   pro mesmo valor, mas por coincidência, não por dependerem uma da
-  outra; agora é uma fonte única de verdade.
+  outra; agora é uma fonte única de verdade. Duplicação nunca tinha sido
+  registrada como pendência formal — ver entrada nova em
+  `DIVIDA_TECNICA.md` → "Concluído". (`ab2ee49`)
 
 ### Added
 - Nova documentação técnica: `docs/ARQUITETURA.md`, `docs/ONBOARDING.md`
@@ -71,7 +73,11 @@ frente, todo commit relevante ganha uma linha nova aqui — ver
   (`pip install -e .`), layout flat — `agents`, `api`, `core` continuam
   nos mesmos caminhos, nenhum import existente mudou. Dependências
   espelham `requirements.txt` dinamicamente (sem duplicar a lista). CI
-  passa a validar o empacotamento em todo push.
+  passa a validar o empacotamento em todo push. Validado depois: suíte
+  `tests/testar_offline.py` (Playwright), login/dashboard manual como
+  `timoteo`/OSA e `carlos`/ITJ, e deploy real em `origin` (não só CI) —
+  todos sem regressão. Documentado como opção em `docs/ARQUITETURA.md` e
+  `docs/ONBOARDING.md` → "Setup rápido (local)". (`ab2ee49`)
 
 ### Fixed
 - Removidos arquivos soltos não rastreados da raiz e referência obsoleta

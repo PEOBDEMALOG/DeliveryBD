@@ -19,7 +19,7 @@ específico por um período) abre assim:
 1. **Defina o escopo em uma frase** — o que muda e por quê. Se não cabe
    em uma frase, é grande demais para uma frente só; quebre em partes.
 2. **Registre no backlog** antes de começar a codar, usando o
-   [template da seção 3](#3-template-de-sprintbacklog). Se for dívida
+   [template da seção 4](#4-template-de-sprintbacklog). Se for dívida
    técnica (algo que já existe e está errado/incompleto), registra direto
    em `DIVIDA_TECNICA.md`. Se for feature nova, registra onde a squad
    estiver rastreando sprint (backlog compartilhado da equipe — este
@@ -40,7 +40,53 @@ registro do backlog se fugir do padrão.
 
 ---
 
-## 2. Definição de Pronto (Definition of Done)
+## 2. Convenção de mensagem de commit
+
+A partir de agora (não retroativo — ver nota no fim desta seção), commits
+seguem [Conventional Commits](https://www.conventionalcommits.org/pt-br/):
+
+```
+<tipo>(<escopo opcional>): <descrição no imperativo, minúsculo>
+```
+
+**Tipos usados neste projeto:**
+
+| Tipo | Quando usar |
+|---|---|
+| `feat` | Feature nova ou comportamento novo visível pro usuário |
+| `fix` | Correção de bug — comportamento estava errado, agora está certo |
+| `docs` | Só documentação (`docs/`, `README.md`, `DIVIDA_TECNICA.md`, comentário) — nenhum código de produto muda |
+| `chore` | Manutenção sem efeito funcional — dependência, config, limpeza de arquivo, reorganização de pasta |
+| `refactor` | Reestrutura código existente sem mudar comportamento observável |
+| `security` | Correção especificamente de vulnerabilidade/exposição de dado — **não é tipo oficial do Conventional Commits**, é extensão deste projeto pra deixar achado de segurança grepável separado de `fix` genérico |
+| `test` | Mudança em `tests/` (scripts de validação) sem tocar código de produto |
+
+Escopo (entre parênteses, opcional) indica a área afetada quando ajuda a
+quem lê o log — ex: `fix(upload):`, `security(auth):`. Não é obrigatório;
+use quando a descrição sozinha não deixa claro onde a mudança acontece.
+
+**Exemplos reais adaptados do histórico deste repositório** (mensagem
+original → como ficaria no padrão novo):
+
+- `Remove card duplicado de Alertas Críticos, ajusta grid KPIs 7→6`
+  → `fix: remove card duplicado de Alertas Críticos, ajusta grid KPIs 7→6`
+- `Remove segredos hardcoded: JWT_SECRET falha explícito, credenciais de demo rotacionadas`
+  → `security(auth): remove segredos hardcoded — JWT_SECRET falha explícito, credenciais de demo rotacionadas`
+- `Card Turnaround de Coleta por Transportadora, substitui Status das Remessas`
+  → `feat(dashboard): card Turnaround de Coleta por Transportadora, substitui Status das Remessas`
+- `Reorganiza scripts de validacao para tests/ e limpa residuos de raiz`
+  → `chore: reorganiza scripts de validação para tests/ e limpa resíduos de raiz`
+
+**Isto vale só daqui pra frente.** Não reescrevemos o histórico de commits
+já existente pra encaixar no padrão — reescrever histórico (`rebase -i`,
+`filter-branch`) é arriscado (reescreve hash de tudo que vem depois, quebra
+qualquer referência externa ao commit) e não traz benefício real
+proporcional ao risco. O `CHANGELOG.md` na raiz já cobre o histórico
+anterior de forma legível, sem precisar mexer nos commits originais.
+
+---
+
+## 3. Definição de Pronto (Definition of Done)
 
 Uma frente de trabalho só está pronta quando **todos** os itens abaixo
 são verdade:
@@ -58,8 +104,15 @@ são verdade:
   fez a mudança.
 - [ ] **Nenhum código/rota `[TEMPORARIO]` sobrevivendo** — removido antes
   da promoção (ver seção 1).
-- [ ] **Regras de segurança obrigatórias respeitadas** — ver seção 4.
+- [ ] **Regras de segurança obrigatórias respeitadas** — ver seção 5.
   Isso é bloqueante, não "nice to have".
+- [ ] **Mensagem de commit no padrão Conventional Commits** — ver seção 2.
+- [ ] **`CHANGELOG.md` atualizado quando a mudança é relevante pra quem
+  usa ou revisa o projeto** — feature nova, correção de bug visível,
+  mudança de segurança, ou reorganização estrutural ganham uma linha
+  nova em `CHANGELOG.md` no mesmo commit (ou num commit `docs` logo em
+  seguida). Ajuste interno sem efeito observável (typo em comentário,
+  formatação) não precisa.
 - [ ] **Revisado por uma segunda pessoa antes do push para `origin`** —
   mesmo que informalmente (compartilhar o diff, pedir uma leitura rápida),
   toda mudança que toque autenticação, filtro por CD, ou dado sensível
@@ -77,7 +130,7 @@ são verdade:
 
 ---
 
-## 3. Template de sprint/backlog
+## 4. Template de sprint/backlog
 
 Estrutura inspirada no padrão já usado em `DIVIDA_TECNICA.md` (título,
 contexto do "por quê", e o que fazer), com os campos de priorização
@@ -107,7 +160,7 @@ Exemplo real já registrado nesse formato:
 
 ---
 
-## 4. Regras de segurança obrigatórias
+## 5. Regras de segurança obrigatórias
 
 Estas três regras são **decisões de arquitetura**, não descrições de bugs
 já corrigidos — valem para todo código novo, sempre, mesmo que o
@@ -163,3 +216,6 @@ qualquer endpoint futuro.
   como validar uma mudança antes de considerar pronta.
 - [`ARQUITETURA.md`](ARQUITETURA.md) — visão geral do sistema, stack e os
   7 agentes.
+- [`CHANGELOG.md`](../CHANGELOG.md) — histórico de mudanças relevantes por
+  data/marco, retroativo ao primeiro commit do repositório; alimentado a
+  partir de agora seguindo a Definição de Pronto (seção 3).

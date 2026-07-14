@@ -2,6 +2,45 @@
 
 ## Pendências
 
+### seed_stress_test.py falha de forma reproduzível contra o Supabase de teste — 14/07/2026
+
+**Prioridade:** Média
+**Esforço estimado:** M — provavelmente exige quebrar a sessão longa do
+script em commits/reconexões periódicas
+**Risco:** Médio — bloqueia a única forma documentada de gerar o dataset de
+stress completo (`docs/ARQUITETURA.md` cita "27 mil remessas"), então o
+checklist de performance fica sem como ser validado contra volume real
+até isso ser corrigido
+
+Ao tentar `python scripts/seed_stress_test.py --periodo ano --modo limpo`
+(pré-requisito documentado do checklist de stress), a conexão caiu com
+`asyncpg.exceptions.ConnectionDoesNotExistError: connection was closed in
+the middle of operation` — **4 tentativas seguidas falharam** com o mesmo
+erro, em pontos completamente diferentes do script a cada vez (uma vez
+numa query `INSERT INTO historico_eventos`, outra num `INSERT INTO
+onda_remessas`, outra num simples `SELECT` de veículos):
+
+| Tentativa | `--periodo` | Resultado |
+|---|---|---|
+| 1 | `ano` | Falhou (~4478 remessas geradas antes de cair) |
+| 2 | `ano` | Falhou de novo (~4472 remessas) |
+| 3 | `trimestre` | Falhou (~4491 remessas) |
+| 4 | `mes` | Falhou imediatamente (`SELECT veiculos`, 0 remessas geradas) |
+| 5 | `semana` | **Sucesso** — 503 remessas, 60 ondas, 2468 eventos, 299.1s |
+
+Só `--periodo semana` (a menor opção) completou. O padrão (falha em pontos
+distintos do script, incluindo uma query de leitura trivial) indica que
+não é volume de dado nem uma query específica travando — é a conexão
+única e de longa duração que o script mantém aberta sendo derrubada pelo
+pooler do Supabase (transaction pooler) depois de alguns minutos, provável
+timeout de idle/sessão do lado do Supabase, não um bug de lógica do
+script.
+
+**Recomendação:** ajustar `seed_stress_test.py` pra não depender de uma
+única conexão viva por dezenas de minutos — reconectar periodicamente
+(ex.: a cada período processado) ou fazer commits parciais que permitam
+retomar em caso de queda, em vez de uma sessão monolítica.
+
 ### Senhas de usuários demo em texto puro no código
 `core/auth.py` guarda usuário/senha dos 3 usuários de demonstração
 (`timoteo`, `carlos`, `erick`) hardcoded em texto puro no dicionário
@@ -104,6 +143,57 @@ para ter valor prático: uma cascata que só reavalia 1x/dia não serve para
 destravar coletas paradas em questão de horas.
 
 ## Concluído (registro, não pendência)
+
+### tests/executar_testes.py — T05 e T09 investigados com dataset completo (semana) — 14/07/2026
+
+Ao validar a reorganização `scripts/executar_testes.py` →
+`tests/executar_testes.py` (commit `6151872`), rodei o checklist contra um
+banco levemente semeado (110 remessas, acumuladas de testes manuais
+anteriores) e encontrei 2 falhas que não batiam com os gargalos já
+documentados em `docs/ARQUITETURA.md` (T01/T03/T04/T11). Não consegui
+rodar `--periodo ano` (ver "seed_stress_test.py falha de forma
+reproduzível", pendência acima), mas consegui `--periodo semana` (503
+remessas, dataset gerado pelo próprio `seed_stress_test.py`, não acumulado
+manualmente) e rodei o checklist de novo pra comparar:
+
+| Teste | 110 remessas (semeadura manual acumulada) | 503 remessas (`seed_stress_test.py --periodo semana`) |
+|---|---|---|
+| T05 — OTIF entre 85–100% | ❌ 80.0% | ✅ **97.0%** |
+| T09 — `limit=1000` retorna 1000 | ❌ 110 retornados | ❌ 503 retornados |
+| T03 — `/api/ondas/historico?periodo=mes` < 4s | ❌ 4.05s | ❌ 4.55s (piorou) |
+| T04 — `/api/transportadoras/estatisticas` < 3s | ❌ 4.41s | ❌ 4.66s (piorou) |
+| T01 — `/api/dashboard` < 3s | ✅ 2.57s | ✅ 2.18s |
+| T11 — `/api/ondas/historico?periodo=ano` < 5s | ✅ 4.19s | ✅ 4.58s (mais perto do limite) |
+
+**Resultado confirmado, não suposição:**
+- **T05 estava errado por causa do dataset, não por bug de código.**
+  Com dado gerado de forma consistente pelo `seed_stress_test.py`, o OTIF
+  voltou pro range esperado (97.0%). O banco levemente semeado tinha
+  acumulado cenários propositalmente ruins de testes manuais anteriores
+  (`Erros_Controlados`, `Alerta_ATA_Prazo_Vencido` etc.) que derrubavam o
+  OTIF artificialmente. **Não é dívida técnica — fechado.**
+- **T09 é mesmo um problema do teste, não do código**, confirmado: o
+  endpoint `/api/remessas?limit=1000` funcionou corretamente nas duas
+  rodadas, retornando exatamente o total disponível sem erro — a asserção
+  do checklist ("retorna 1000") assume que existem ≥1000 remessas
+  semeadas, o que não aconteceu em nenhuma das duas rodadas (nem a de 503
+  chegou lá). Não consegui confirmar com >1000 remessas de verdade por
+  causa da falha de conexão documentada na pendência acima. **Não é
+  dívida técnica do endpoint — é limitação de dataset do teste, já
+  esperada.**
+- **T03/T04 se confirmam como gargalo real de N+1**, não só "mesmo
+  endpoint documentado" — o tempo piorou de forma consistente com mais
+  volume (T03: 4.05s→4.55s; T04: 4.41s→4.66s), o que é exatamente o
+  sintoma esperado de N+1 query. Segue como pendência já registrada em
+  `docs/ARQUITETURA.md` → "Próximas evoluções" ("Resolver os gargalos de
+  N+1 query"), não duplicada aqui.
+- **T01/T11 não reproduziram nem a 503 remessas** — continuam passando.
+  Não foi possível confirmar se eles falhariam no volume documentado
+  originalmente (27 mil remessas, rodada anterior contra Supabase) porque
+  a falha de conexão (pendência acima) impediu chegar nesse volume desta
+  vez. Fica em aberto — não é uma contradição do achado original (rodado
+  outro dia, contra volume ~50x maior), só não pôde ser re-confirmado
+  agora.
 
 ### Vazamento de dados entre CDs (13/07/2026)
 Causa raiz sistêmica: 11+ endpoints (`/api/dashboard`,

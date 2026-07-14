@@ -93,9 +93,11 @@ peo_bd/
 │   ├── criar_indexes.py           # Índices de performance (Etapa 1 do stress test)
 │   ├── seed_stress_test.py        # Gera histórico realista em volume (Etapa 2)
 │   └── gerar_backlog_demos.py / gerar_planilha_cotacao.py / simular_erros_demo.py
-├── tests/                          # validação — não é pytest, são scripts de entrada
+├── tests/
 │   ├── executar_testes.py         # Checklist automatizado de performance/corretude (Etapa 3)
-│   └── testar_offline.py          # Suíte Playwright do Modo de Contingência offline
+│   ├── testar_offline.py          # Suíte Playwright do Modo de Contingência offline
+│   └── test_smoke.py              # Wrapper pytest fino sobre os dois acima (usado pelo CI)
+├── .github/workflows/ci.yml       # CI: import de sanidade + smoke test (ver docs/CI.md)
 ├── requirements.txt
 ├── vercel.json                    # Deploy serverless (build + cron do Resolvedor)
 └── README.md

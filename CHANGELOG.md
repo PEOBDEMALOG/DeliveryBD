@@ -1,5 +1,8 @@
 # Changelog — PEO-BD
 
+[![CI](https://github.com/marciobarbarulo10-oss/Projeto-BD/actions/workflows/ci.yml/badge.svg)](https://github.com/marciobarbarulo10-oss/Projeto-BD/actions/workflows/ci.yml)
+— o que o workflow cobre (e não cobre) está em [`docs/CI.md`](docs/CI.md).
+
 Histórico de mudanças relevantes do projeto, agrupado por data/marco de
 trabalho. Formato inspirado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/)
 (seções Added/Changed/Fixed/Security/Docs) — sem versionamento semântico,

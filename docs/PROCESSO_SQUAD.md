@@ -121,6 +121,12 @@ são verdade:
   o padrão esperado quando houver mais de uma pessoa na squad.
 - [ ] **`git push origin main` feito e validado** antes de sequer
   considerar `producao`.
+- [ ] **CI passou (verde)** antes de considerar pronto pra promover pra
+  `producao` — ver `docs/CI.md` pro que o workflow cobre (import de
+  sanidade, smoke test, checklist informativo) e pro que **não** cobre
+  (não substitui `tests/testar_offline.py` nem a validação manual
+  multi-perfil acima — CI verde não dispensa nenhum dos itens deste
+  checklist).
 - [ ] **Promoção pra `producao` é um passo separado e explícito** —
   `git push producao main` só acontece depois de tudo acima, seguindo o
   processo em `WORKFLOW.md`. **Nunca commit ou push direto em `producao`
@@ -219,3 +225,6 @@ qualquer endpoint futuro.
 - [`CHANGELOG.md`](../CHANGELOG.md) — histórico de mudanças relevantes por
   data/marco, retroativo ao primeiro commit do repositório; alimentado a
   partir de agora seguindo a Definição de Pronto (seção 3).
+- [`CI.md`](CI.md) — o que `.github/workflows/ci.yml` cobre e o que não
+  cobre (não substitui `tests/testar_offline.py` nem a validação manual
+  multi-perfil).

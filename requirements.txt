@@ -36,3 +36,9 @@ anthropic>=0.40.0                # Assistente de Diagnóstico (chat contextual p
 python-jose[cryptography]==3.5.0  # JWT (assinatura/verificação HS256)
 pyasn1==0.6.4                     # pin explícito — CVE-2026-30922/23490 corrigidos em 0.6.3+
 passlib[bcrypt]==1.7.4            # hashing de senha (reservado para uso futuro)
+
+# ── Testes ───────────────────────────────────────────────────
+# Wrapper fino sobre a validação já existente (tests/test_smoke.py) — não
+# substitui tests/executar_testes.py nem tests/testar_offline.py, só dá
+# um ponto de entrada padrão (`pytest tests/`) pro CI. Ver docs/CI.md.
+pytest==9.1.1

@@ -1,0 +1,101 @@
+name: CI
+
+# Roda a cada push em main e em qualquer pull request contra main.
+# Escopo e o que NÃO é coberto: ver docs/CI.md.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ── Job 1: import de sanidade ──────────────────────────────────────────
+  # Pega erro de sintaxe/import quebrado em core/, agents/, api/ antes
+  # de gastar tempo subindo servidor. Não depende de banco.
+  lint:
+    name: Lint / sanity import
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instala dependências
+        run: pip install -r requirements.txt
+
+      - name: Import de sanidade (core/, agents/, api/)
+        env:
+          # Só pra satisfazer o fail-fast de core/config.py — nunca usado
+          # fora deste job efêmero, sem banco real conectado.
+          JWT_SECRET: ci-throwaway-secret-nunca-usado-fora-deste-runner
+        run: |
+          python -c "
+          import importlib, pkgutil, sys
+
+          pacotes = ['core', 'agents', 'api']
+          erros = []
+          for pacote in pacotes:
+              mod = importlib.import_module(pacote)
+              for _, nome, _ in pkgutil.iter_modules(mod.__path__, pacote + '.'):
+                  try:
+                      importlib.import_module(nome)
+                      print(f'OK   {nome}')
+                  except Exception as e:
+                      print(f'ERRO {nome}: {e}')
+                      erros.append(nome)
+
+          if erros:
+              print(f'\n{len(erros)} modulo(s) falharam ao importar: {erros}')
+              sys.exit(1)
+          print('\nTodos os modulos importados com sucesso.')
+          "
+
+  # ── Job 2: smoke test + checklist de corretude ─────────────────────────
+  # Sobe a API de verdade contra SQLite (fallback padrão do projeto
+  # quando DATABASE_URL não está definida — não setamos essa env var de
+  # propósito) e roda tests/test_smoke.py, que cobre: (a) smoke test
+  # mínimo (ping/login/dashboard autenticado) como asserção pytest real,
+  # e (b) invoca tests/executar_testes.py como subprocesso, reportando o
+  # resultado sem bloquear o job — ver docs/CI.md pra entender por quê.
+  smoke-e-checklist:
+    name: Smoke test + checklist (SQLite)
+    runs-on: ubuntu-latest
+    needs: lint
+    env:
+      JWT_SECRET: ci-throwaway-secret-nunca-usado-fora-deste-runner
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instala dependências
+        run: pip install -r requirements.txt
+
+      - name: Semeia dados de demonstração (SQLite local, sem DATABASE_URL)
+        run: python scripts/seed_demo.py
+
+      - name: Sobe a API em background
+        run: |
+          nohup python -m uvicorn api.main:app --host 127.0.0.1 --port 8000 \
+            > uvicorn.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:8000/api/ping > /dev/null; then
+              echo "API pronta após ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "API não respondeu a tempo — log do servidor:"
+          cat uvicorn.log
+          exit 1
+
+      - name: Smoke test + checklist (pytest tests/)
+        run: pytest tests/test_smoke.py -v
+
+      - name: Logs do servidor (se algo falhou)
+        if: failure()
+        run: cat uvicorn.log

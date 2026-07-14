@@ -60,6 +60,12 @@ são verdade:
   da promoção (ver seção 1).
 - [ ] **Regras de segurança obrigatórias respeitadas** — ver seção 4.
   Isso é bloqueante, não "nice to have".
+- [ ] **Revisado por uma segunda pessoa antes do push para `origin`** —
+  mesmo que informalmente (compartilhar o diff, pedir uma leitura rápida),
+  toda mudança que toque autenticação, filtro por CD, ou dado sensível
+  passa por pelo menos um outro par de olhos antes de ir para `origin`.
+  Trabalho solo temporário (squad de 1 pessoa) é exceção documentada, não
+  o padrão esperado quando houver mais de uma pessoa na squad.
 - [ ] **`git push origin main` feito e validado** antes de sequer
   considerar `producao`.
 - [ ] **Promoção pra `producao` é um passo separado e explícito** —
@@ -103,7 +109,7 @@ Exemplo real já registrado nesse formato:
 
 ## 4. Regras de segurança obrigatórias
 
-Estas duas regras são **decisões de arquitetura**, não descrições de bugs
+Estas três regras são **decisões de arquitetura**, não descrições de bugs
 já corrigidos — valem para todo código novo, sempre, mesmo que o
 incidente que as originou já esteja resolvido.
 

@@ -5,6 +5,7 @@
 import hashlib
 import json
 import logging
+import re
 import shutil
 from datetime import date, datetime, timedelta, time as dtime
 from pathlib import Path
@@ -342,6 +343,30 @@ async def _seed_dados_base():
 
 # ── UPLOAD E PIPELINE COMPLETO ────────────────────────────────────────────────
 
+_CARACTERES_INVALIDOS_ARQUIVO = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def nome_arquivo_seguro(filename: Optional[str], fallback: str = "arquivo") -> str:
+    """Extrai um nome de arquivo seguro pra usar na composição de um path de
+    destino em disco a partir do filename que o cliente multipart informou —
+    NUNCA usar arquivo.filename cru nessa composição (path traversal via
+    "../", separador de diretório, ou via filename* RFC 2231/5987 que libs
+    de multipart podem decodificar pra um valor diferente do filename
+    visível — ver GHSA-vffw-93wf-4j4q no python-multipart).
+
+    Path(...).name descarta qualquer componente de diretório e qualquer
+    sequência "../" (só sobra o último segmento) — normalizamos barra
+    invertida pra barra antes porque, além do deploy em Linux, o
+    desenvolvimento local roda em Windows, onde "\\" também separa
+    diretório. A whitelist de caracteres depois cobre o resto (null byte,
+    unicode exótico, etc.), sem exigir que o chamador saiba desses detalhes.
+    """
+    bruto = (filename or "").strip().replace("\\", "/")
+    nome = Path(bruto).name
+    nome = _CARACTERES_INVALIDOS_ARQUIVO.sub("_", nome).strip("._")
+    return nome[:150] or fallback
+
+
 @app.post("/api/upload", summary="Upload de arquivo + pipeline completo")
 async def upload_arquivo(
     arquivo:     UploadFile = File(...),
@@ -351,7 +376,7 @@ async def upload_arquivo(
     auto_enviar: bool       = Form(True),
     orq:         Orquestrador = Depends(get_orq),
 ):
-    destino = settings.UPLOAD_DIR / f"{cd_codigo}_{usuario}_{arquivo.filename}"
+    destino = settings.UPLOAD_DIR / f"{cd_codigo}_{usuario}_{nome_arquivo_seguro(arquivo.filename)}"
     destino.write_bytes(await arquivo.read())
 
     logger.info(f"[API] Upload recebido: {arquivo.filename} | CD={cd_codigo} | user={usuario}")
@@ -384,7 +409,7 @@ async def upload_lote(
 ):
     resultados = []
     for arq in arquivos:
-        destino = settings.UPLOAD_DIR / f"{cd_codigo}_{usuario}_{arq.filename}"
+        destino = settings.UPLOAD_DIR / f"{cd_codigo}_{usuario}_{nome_arquivo_seguro(arq.filename)}"
         # Usa await arq.read() para garantir leitura completa independente do ponteiro
         conteudo = await arq.read()
         destino.write_bytes(conteudo)
@@ -2847,7 +2872,7 @@ async def importar_cotacao(
             return None
 
     # Salva temporariamente
-    tmp_path = settings.UPLOAD_DIR / f"cotacao_{arquivo.filename}"
+    tmp_path = settings.UPLOAD_DIR / f"cotacao_{nome_arquivo_seguro(arquivo.filename)}"
     with tmp_path.open("wb") as f:
         import shutil
         shutil.copyfileobj(arquivo.file, f)

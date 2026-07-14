@@ -135,6 +135,59 @@ registrados no `app` e falhe se algum aceitar um `cd_id` que não bata
 com o CD do token para `role=operador`, evitando regressão futura —
 hoje essa garantia depende só de revisão manual em cada PR.
 
+### Path traversal via filename de upload (14/07/2026)
+Os 3 endpoints multipart (`/api/upload`, `/api/upload-lote`,
+`/api/cotacao/importar`) usavam `arquivo.filename` cru na composição do
+path de destino em disco (`UPLOAD_DIR / f"{prefixo}_{arquivo.filename}"`).
+Prova de conceito em sandbox isolado (réplica exata da composição antiga):
+`filename="/../../db/peo_bd.db"` escapava de `UPLOAD_DIR` e escrevia num
+diretório irmão — no ambiente real, o alvo alcançável por esse padrão de
+path é o próprio `data/` do projeto (schema, banco SQLite local, etc.).
+
+**Corrigido:** nova função `nome_arquivo_seguro()` (`api/main.py`) — extrai
+só o nome base via `Path(...).name` (descarta qualquer `../`/diretório),
+normaliza barra invertida (dev local roda em Windows) e aplica whitelist de
+caracteres (`[A-Za-z0-9._-]`), preservando a extensão pra não quebrar a
+detecção de formato (xlsx/csv/xls) já existente. Usada nos 3 endpoints.
+Validado com bateria de payloads (`../`, `/../../`, `..\\..\\`, RFC2231/5987
+`filename*` decodificado, null byte, filename vazio) — nenhum escapa de
+`UPLOAD_DIR`; filenames legítimos preservados. Teste end-to-end real (não só
+função isolada) contra o servidor rodando confirma: ataque bloqueado,
+upload legítimo (arquivo xlsx real, pipeline completo) funciona normal.
+
+**RECOMENDAÇÃO DE PROCESSO:** todo endpoint novo que receba `UploadFile` e
+grave em disco **DEVE** passar o filename por `nome_arquivo_seguro()` antes
+de compor qualquer path — nunca interpolar `arquivo.filename` cru.
+
+### Dependências com CVE conhecido: python-jose e python-multipart (14/07/2026)
+Auditoria do Dependabot (repositório `producao`) encontrou 6 vulnerabilidades
+conhecidas: `python-jose==3.3.0` (1 crítica — confusão de algoritmo
+CVE-2024-33663, não explorável na prática porque o projeto só usa HS256
+simétrico com `algorithms=["HS256"]` fixo; 1 moderada — DoS por
+descompressão de JWE CVE-2024-33664, alcançável pré-autenticação via
+`verificar_token` no header `Authorization`) e `python-multipart==0.0.28`
+(1 alta + 3 baixas — DoS de parsing quadrático e RFC2231/5987 filename
+smuggling, só alcançáveis autenticado já que os 3 endpoints multipart estão
+atrás do middleware JWT).
+
+**Corrigido:** `python-jose` → **3.5.0** (não 3.4.0 como inicialmente
+especificado — 3.4.0 corrige os mesmos CVEs mas declara `pyasn1<0.5.0`, o
+que força downgrade do `pyasn1` pra uma versão com 2 CVEs de DoS próprios
+conhecidos, CVE-2026-30922/CVE-2026-23490; confirmado com
+`pip install -r requirements.txt` limpo que a combinação 3.4.0 +
+`pyasn1` corrigido é `ResolutionImpossible`. 3.5.0 relaxa pra
+`pyasn1>=0.5.0` e resolve limpo). `python-multipart` → **0.0.32** (última
+estável — corrige as 4 vulnerabilidades do 0.0.28, patched versions
+0.0.30/0.0.31). Suíte de login/JWT (3 credenciais, `/api/auth/me`, rejeição
+de token adulterado e de senha errada) e os 3 fluxos de upload com arquivo
+legítimo validados contra o servidor com as versões novas — zero falhas.
+
+**RECOMENDAÇÃO DE PROCESSO:** ao seguir uma recomendação de upgrade de
+versão vinda de advisory, sempre confirmar com `pip install -r
+requirements.txt` num ambiente limpo antes de assumir que a versão
+"patched" citada no CVE é a escolha certa — o patch de uma lib pode
+empurrar uma dependência transitiva pra uma versão pior.
+
 ### Cálculo de motivo de pendência unificado no backend
 Antes: `motivoBloqueio(r)` duplicava no frontend (`index.html`) a mesma
 lógica de `_pendentes_detalhe()` no backend (`agents/agente_monitor.py`).

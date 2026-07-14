@@ -98,7 +98,8 @@ peo_bd/
 │   ├── testar_offline.py          # Suíte Playwright do Modo de Contingência offline
 │   └── test_smoke.py              # Wrapper pytest fino sobre os dois acima (usado pelo CI)
 ├── .github/workflows/ci.yml       # CI: import de sanidade + smoke test (ver docs/CI.md)
-├── requirements.txt
+├── requirements.txt                # Dependências diretas — editar aqui pra atualizar versão
+├── requirements.lock.txt           # Versão exata (direta + transitiva) — instalar a partir daqui
 ├── vercel.json                    # Deploy serverless (build + cron do Resolvedor)
 └── README.md
 ```
@@ -115,8 +116,15 @@ peo_bd/
 
 ### 2. Instalar dependências
 ```bash
-pip install -r requirements.txt
+pip install -r requirements.lock.txt
 ```
+Usa `requirements.lock.txt` (versão exata de toda dependência, direta e
+transitiva) em vez de `requirements.txt` — reproduz exatamente o que
+roda em CI/produção. `requirements.txt` continua sendo a lista de
+dependências diretas/soltas: edite lá quando for atualizar versão
+deliberadamente, e regenere o lockfile no mesmo commit (`pip install
+pip-tools && pip-compile --output-file=requirements.lock.txt
+requirements.txt`) — ver `docs/PROCESSO_SQUAD.md` → Definição de Pronto.
 
 ### 3. Configurar `.env`
 Copie `.env.example` para `.env` e preencha pelo menos:

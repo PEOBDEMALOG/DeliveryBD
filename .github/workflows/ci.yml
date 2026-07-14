@@ -22,8 +22,8 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Instala dependências
-        run: pip install -r requirements.txt
+      - name: Instala dependências (lockfile — versão exata)
+        run: pip install -r requirements.lock.txt
 
       - name: Import de sanidade (core/, agents/, api/)
         env:
@@ -72,8 +72,8 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Instala dependências
-        run: pip install -r requirements.txt
+      - name: Instala dependências (lockfile — versão exata)
+        run: pip install -r requirements.lock.txt
 
       - name: Semeia dados de demonstração (SQLite local, sem DATABASE_URL)
         run: python scripts/seed_demo.py

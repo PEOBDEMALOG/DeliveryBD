@@ -11,10 +11,11 @@ passar):
 ## O que o CI cobre
 
 ### Job 1 — `lint` (import de sanidade)
-Instala `requirements.txt` e importa todo módulo de `core/`, `agents/` e
-`api/`. Pega erro de sintaxe ou import quebrado (dependência faltando,
-nome errado, ciclo de import) **antes** de gastar tempo subindo servidor.
-Não toca banco.
+Instala `requirements.lock.txt` (versão exata, mesma usada em produção —
+não `requirements.txt` solto, ver `ARQUITETURA.md` → "Setup rápido") e
+importa todo módulo de `core/`, `agents/` e `api/`. Pega erro de sintaxe
+ou import quebrado (dependência faltando, nome errado, ciclo de import)
+**antes** de gastar tempo subindo servidor. Não toca banco.
 
 ### Job 2 — `smoke-e-checklist`
 Sobe a API de verdade contra SQLite (o fallback padrão do projeto quando

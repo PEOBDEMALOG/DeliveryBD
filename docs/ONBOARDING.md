@@ -14,7 +14,9 @@ antes de mexer em áreas sensíveis.
 Passo a passo completo está em `ARQUITETURA.md` → "Setup rápido (local)".
 Resumo do fluxo:
 
-1. Python 3.11+, `pip install -r requirements.txt`.
+1. Python 3.11+, `pip install -r requirements.lock.txt` (versão exata,
+   reproduz CI/produção — `requirements.txt` é só a lista de
+   dependências diretas, usada pra atualizar versão deliberadamente).
 2. Copiar `.env.example` → `.env` e preencher (nomes das variáveis abaixo —
    **nunca peça os valores reais por chat/mensagem**; peça ao responsável
    do projeto ou copie do cofre de credenciais que a equipe usa).

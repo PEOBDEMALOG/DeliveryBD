@@ -52,6 +52,17 @@ frente, todo commit relevante ganha uma linha nova aqui — ver
 - Nova documentação técnica: `docs/ARQUITETURA.md`, `docs/ONBOARDING.md`
   e `docs/PROCESSO_SQUAD.md` (processo de squad/sprint, Definição de
   Pronto, regras de segurança obrigatórias). (`6e73376`, `17a68b6`)
+- Adotado Conventional Commits daqui pra frente (`docs/PROCESSO_SQUAD.md`
+  → "Convenção de mensagem de commit") e este `CHANGELOG.md`, retroativo
+  a todo o histórico do repositório. (`cb8d982`)
+- CI básico via GitHub Actions (`.github/workflows/ci.yml`): import de
+  sanidade + smoke test/checklist contra SQLite a cada push/PR, com
+  `tests/test_smoke.py` como wrapper pytest fino sobre a validação já
+  existente. Escopo documentado em `docs/CI.md`. (`f06c664`)
+- `requirements.lock.txt`: lockfile de reprodutibilidade exata (via
+  pip-tools), fixando `python-jose==3.5.0`/`python-multipart==0.0.32`
+  (o upgrade de segurança acima) e toda dependência transitiva. CI passa
+  a instalar a partir dele em vez de `requirements.txt` solto.
 
 ### Fixed
 - Removidos arquivos soltos não rastreados da raiz e referência obsoleta

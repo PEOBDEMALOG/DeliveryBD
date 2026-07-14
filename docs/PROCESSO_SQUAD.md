@@ -119,6 +119,15 @@ são verdade:
   passa por pelo menos um outro par de olhos antes de ir para `origin`.
   Trabalho solo temporário (squad de 1 pessoa) é exceção documentada, não
   o padrão esperado quando houver mais de uma pessoa na squad.
+- [ ] **`requirements.lock.txt` regenerado no mesmo commit, se
+  `requirements.txt` mudou** — `pip install pip-tools && pip-compile
+  --output-file=requirements.lock.txt requirements.txt`. Esquecer esse
+  passo é silencioso: o CI continua instalando a partir do lockfile (ver
+  `docs/CI.md`), então passaria verde testando a versão **antiga**,
+  escondendo exatamente o cenário que o lockfile existe pra prevenir —
+  ex: o upgrade de `python-jose`/`python-multipart` por CVE (ver
+  `DIVIDA_TECNICA.md`) só vale alguma coisa se o lockfile refletir a
+  versão nova.
 - [ ] **`git push origin main` feito e validado** antes de sequer
   considerar `producao`.
 - [ ] **CI passou (verde)** antes de considerar pronto pra promover pra

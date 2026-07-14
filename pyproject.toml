@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "peo-bd"
+version = "0.1.0"
+description = "PEO-BD — Agente robô de Planejamento de Expedição Outbound (Becton Dickinson)"
+requires-python = ">=3.11"
+dynamic = ["dependencies"]
+
+# Espelha requirements.txt em vez de duplicar a lista de dependências —
+# uma única fonte de verdade. Isso inclui pytest (ver seção "Testes" de
+# requirements.txt), então o pacote instalado carrega uma dependência de
+# teste junto; aceitável dado que o projeto já mantém as duas coisas no
+# mesmo arquivo, e simplifica não introduzir um requirements-dev.txt só
+# por causa disto.
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+
+# Layout flat, de propósito — agents/, api/, core/ continuam nos mesmos
+# caminhos de sempre (nenhum import existente muda). Só esses 3 pacotes
+# são instaláveis; frontend/, scripts/, tests/, data/, docs/ não são
+# módulos Python importáveis e ficam de fora.
+[tool.setuptools.packages.find]
+include = ["agents*", "api*", "core*"]

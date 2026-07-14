@@ -47,6 +47,10 @@ frente, todo commit relevante ganha uma linha nova aqui — ver
 - `README.md` simplificado para conter só o nome do projeto — conteúdo
   completo (arquitetura, setup, deploy) migrado para
   `docs/ARQUITETURA.md`. (`f1a2a29`)
+- `api/main.py` deixa de calcular `BASE_DIR` de forma independente e
+  passa a importar de `core.config` — as duas contas sempre resolviam
+  pro mesmo valor, mas por coincidência, não por dependerem uma da
+  outra; agora é uma fonte única de verdade.
 
 ### Added
 - Nova documentação técnica: `docs/ARQUITETURA.md`, `docs/ONBOARDING.md`
@@ -62,7 +66,12 @@ frente, todo commit relevante ganha uma linha nova aqui — ver
 - `requirements.lock.txt`: lockfile de reprodutibilidade exata (via
   pip-tools), fixando `python-jose==3.5.0`/`python-multipart==0.0.32`
   (o upgrade de segurança acima) e toda dependência transitiva. CI passa
-  a instalar a partir dele em vez de `requirements.txt` solto.
+  a instalar a partir dele em vez de `requirements.txt` solto. (`3a499cc`)
+- `pyproject.toml`: projeto empacotado como pacote Python instalável
+  (`pip install -e .`), layout flat — `agents`, `api`, `core` continuam
+  nos mesmos caminhos, nenhum import existente mudou. Dependências
+  espelham `requirements.txt` dinamicamente (sem duplicar a lista). CI
+  passa a validar o empacotamento em todo push.
 
 ### Fixed
 - Removidos arquivos soltos não rastreados da raiz e referência obsoleta

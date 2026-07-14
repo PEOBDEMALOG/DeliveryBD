@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, func, update, exists
 from sqlalchemy.orm import selectinload, joinedload
 
-from core.config import settings, IS_VERCEL
+from core.config import settings, IS_VERCEL, BASE_DIR
 from core.cache import get_cached, set_cached
 from core.models import (
     Base, Alerta, Remessa, PlanoDia, Onda, OndaRemessa,
@@ -64,7 +64,10 @@ def serializar_evento(e: HistoricoEventos) -> dict:
 
 logger = logging.getLogger(__name__)
 
-BASE_DIR     = Path(__file__).resolve().parent.parent
+# BASE_DIR vem de core.config — fonte única (antes calculado aqui de forma
+# independente e duplicada; os dois SEMPRE resolviam pro mesmo valor, mas
+# por acaso — dois arquivos que precisam concordar sobre "onde fica a raiz
+# do projeto" sem depender um do outro é um bug esperando pra acontecer).
 FRONTEND_DIR = BASE_DIR / "frontend"
 
 # ── App ───────────────────────────────────────────────────────────────────────

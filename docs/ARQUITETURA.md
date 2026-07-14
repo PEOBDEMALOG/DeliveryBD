@@ -98,6 +98,7 @@ peo_bd/
 │   ├── testar_offline.py          # Suíte Playwright do Modo de Contingência offline
 │   └── test_smoke.py              # Wrapper pytest fino sobre os dois acima (usado pelo CI)
 ├── .github/workflows/ci.yml       # CI: import de sanidade + smoke test (ver docs/CI.md)
+├── pyproject.toml                  # Empacota agents/api/core (pip install -e .) — layout flat
 ├── requirements.txt                # Dependências diretas — editar aqui pra atualizar versão
 ├── requirements.lock.txt           # Versão exata (direta + transitiva) — instalar a partir daqui
 ├── vercel.json                    # Deploy serverless (build + cron do Resolvedor)
@@ -125,6 +126,14 @@ dependências diretas/soltas: edite lá quando for atualizar versão
 deliberadamente, e regenere o lockfile no mesmo commit (`pip install
 pip-tools && pip-compile --output-file=requirements.lock.txt
 requirements.txt`) — ver `docs/PROCESSO_SQUAD.md` → Definição de Pronto.
+
+Opcional: `pip install -e .` (usa `pyproject.toml`, layout flat — `agents/`,
+`api/`, `core/` continuam nos mesmos caminhos, nenhum import muda) empacota
+o projeto como instalável, útil pra rodar scripts de qualquer diretório
+sem o bootstrap manual de `sys.path` que `scripts/`/`tests/` fazem hoje.
+Não é o fluxo padrão documentado aqui (produção no Vercel não faz esse
+`pip install -e .`, só instala as dependências) — é uma opção a mais pra
+quem quiser, não uma troca do fluxo acima.
 
 ### 3. Configurar `.env`
 Copie `.env.example` para `.env` e preencha pelo menos:

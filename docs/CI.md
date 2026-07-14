@@ -12,10 +12,12 @@ passar):
 
 ### Job 1 — `lint` (import de sanidade)
 Instala `requirements.lock.txt` (versão exata, mesma usada em produção —
-não `requirements.txt` solto, ver `ARQUITETURA.md` → "Setup rápido") e
-importa todo módulo de `core/`, `agents/` e `api/`. Pega erro de sintaxe
-ou import quebrado (dependência faltando, nome errado, ciclo de import)
-**antes** de gastar tempo subindo servidor. Não toca banco.
+não `requirements.txt` solto, ver `ARQUITETURA.md` → "Setup rápido"),
+depois `pip install -e .` (valida que `pyproject.toml` continua
+empacotando `agents`/`api`/`core` corretamente), e importa todo módulo de
+`core/`, `agents/` e `api/`. Pega erro de sintaxe, import quebrado
+(dependência faltando, nome errado, ciclo de import) ou regressão no
+empacotamento **antes** de gastar tempo subindo servidor. Não toca banco.
 
 ### Job 2 — `smoke-e-checklist`
 Sobe a API de verdade contra SQLite (o fallback padrão do projeto quando

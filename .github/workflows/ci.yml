@@ -25,6 +25,13 @@ jobs:
       - name: Instala dependências (lockfile — versão exata)
         run: pip install -r requirements.lock.txt
 
+      - name: Instala o pacote (pip install -e .)
+        # Valida o empacotamento em si (pyproject.toml, descoberta de
+        # agents/api/core) continuamente — pega regressão se alguém
+        # quebrar essa metadata no futuro. Deps já vieram do lockfile
+        # acima, então isso só confirma o build/instalação do pacote.
+        run: pip install -e .
+
       - name: Import de sanidade (core/, agents/, api/)
         env:
           # Só pra satisfazer o fail-fast de core/config.py — nunca usado

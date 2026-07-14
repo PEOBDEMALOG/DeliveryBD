@@ -575,6 +575,7 @@
                   <select x-model="uploadForm.cd"
                           @change="uploadForm.cdTocadoManualmente = true"
                           class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 ring-bd">
+                    <option value="" disabled>Selecione…</option>
                     <option value="OSA">Osasco — SAP</option>
                     <option value="ITJ">Itajaí — UPS WMS</option>
                   </select>
@@ -584,6 +585,7 @@
                   <select x-model="uploadForm.usuario"
                           @change="uploadForm.usuarioTocadoManualmente = true"
                           class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 ring-bd">
+                    <option value="" disabled>Selecione…</option>
                     <option value="timoteo">Timóteo (Osasco)</option>
                     <option value="carlos">Carlos (Itajaí)</option>
                   </select>
@@ -630,8 +632,8 @@
               </div>
 
               <button @click="enviarUpload()"
-                      :disabled="uploadForm.files.length === 0 || uploading"
-                      :class="uploadForm.files.length === 0 || uploading ? 'opacity-50 cursor-not-allowed' : 'hover:bg-[#004070]'"
+                      :disabled="uploadForm.files.length === 0 || !uploadForm.cd || !uploadForm.usuario || uploading"
+                      :class="uploadForm.files.length === 0 || !uploadForm.cd || !uploadForm.usuario || uploading ? 'opacity-50 cursor-not-allowed' : 'hover:bg-[#004070]'"
                       class="w-full bg-bd text-white font-semibold py-3 rounded-lg text-sm transition-colors">
                 <span x-show="!uploading"
                       x-text="uploadForm.files.length > 1 ? '🚀  Processar ' + uploadForm.files.length + ' Arquivos' : '🚀  Processar Arquivo'"></span>
@@ -2439,7 +2441,7 @@
       ],
 
       uploadForm: {
-        cd: 'OSA', usuario: 'timoteo', files: [], autoEnviar: true,
+        cd: '', usuario: '', files: [], autoEnviar: true,
         cdTocadoManualmente: false, usuarioTocadoManualmente: false,
       },
 
@@ -2458,6 +2460,23 @@
         this.usuarioCd    = dados.cd;
         this.perfilSelecionado = dados.role === 'admin' ? 'master' : dados.cd;
         this.cdFiltro     = this.perfilSelecionado === 'master' ? '' : (this.perfilSelecionado || '');
+        this._resetarDefaultsUpload(dados.usuario || dados.sub || '');
+      },
+
+      // Default do formulário de Novo Upload precisa refletir o usuário logado
+      // (nunca um valor fixo genérico) — roda a cada login/restauração de sessão,
+      // então já vem correto no primeiro upload da sessão, mesmo após reload.
+      // Admin (sem CD fixo) começa com os campos vazios, forçando escolha consciente.
+      _resetarDefaultsUpload(usuarioLogado) {
+        this.uploadForm.cdTocadoManualmente = false;
+        this.uploadForm.usuarioTocadoManualmente = false;
+        if (this.usuarioRole === 'admin') {
+          this.uploadForm.cd = '';
+          this.uploadForm.usuario = '';
+        } else {
+          this.uploadForm.cd = this.usuarioCd || '';
+          this.uploadForm.usuario = usuarioLogado || '';
+        }
       },
 
       async fazerLogin() {
@@ -2497,6 +2516,10 @@
         this.perfilSelecionado = null;
         this.cdFiltro = '';
         this.page = 'dashboard';
+        this.uploadForm.cd = '';
+        this.uploadForm.usuario = '';
+        this.uploadForm.cdTocadoManualmente = false;
+        this.uploadForm.usuarioTocadoManualmente = false;
       },
 
       get otifPct() {
@@ -2565,7 +2588,7 @@
             const res = await fetch('/api/auth/me', { headers: { Authorization: 'Bearer ' + tokenSalvo } });
             if (res.ok) {
               const me = await res.json();
-              this._aplicarSessao({ token: tokenSalvo, nome: me.nome, role: me.role, cd: me.cd });
+              this._aplicarSessao({ token: tokenSalvo, nome: me.nome, role: me.role, cd: me.cd, usuario: me.sub });
             } else {
               localStorage.removeItem('peo_bd_token');
             }

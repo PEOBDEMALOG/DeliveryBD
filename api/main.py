@@ -129,11 +129,18 @@ async def login(body: LoginSchema):
         raise HTTPException(status_code=401, detail="Credenciais inválidas")
 
     token = criar_token(body.usuario)
-    return {"token": token, "nome": user["nome"], "cd": user["cd"], "role": user["role"]}
+    return {
+        "token": token, "usuario": body.usuario,
+        "nome": user["nome"], "cd": user["cd"], "role": user["role"],
+    }
 
 
-@app.get("/api/auth/me", summary="Retorna os dados do usuário autenticado a partir do token")
-async def me(request: Request):
+async def usuario_autenticado(request: Request) -> dict:
+    """Dependency compartilhada: decodifica o JWT já validado pelo middleware
+    exigir_jwt e devolve o payload ({sub, nome, cd, role}). Toda rota que
+    precisa saber QUEM está autenticado (para restringir dados ao CD do
+    usuário) deve depender disto — nunca confiar em cd/cd_id vindo de query
+    param, que o frontend (ou qualquer cliente HTTP) pode manipular."""
     from jose import JWTError
     from core.auth import verificar_token
 
@@ -143,6 +150,47 @@ async def me(request: Request):
         return verificar_token(token)
     except JWTError:
         raise HTTPException(status_code=401, detail="Token inválido ou expirado")
+
+
+def cd_codigo_forcado(usuario: dict, cd_codigo_solicitado: Optional[str]) -> Optional[str]:
+    """Resolve o código de CD que a rota deve usar para filtrar. Operador:
+    sempre o CD do próprio token, ignorando o que o cliente pediu. Admin
+    (cd=None no token): livre para filtrar por qualquer CD ou ver todos."""
+    if usuario.get("role") == "admin":
+        return cd_codigo_solicitado
+    return usuario.get("cd")
+
+
+def verificar_acesso_cd(usuario: dict, cd_codigo_recurso: Optional[str]) -> None:
+    """Bloqueia acesso a um recurso pertencente a outro CD (rotas de detalhe
+    por id, que não têm um parâmetro de filtro para forçar). 404 em vez de
+    403 — não confirma a um operador que o recurso existe em outro CD."""
+    if usuario.get("role") == "admin":
+        return
+    if cd_codigo_recurso and cd_codigo_recurso != usuario.get("cd"):
+        raise HTTPException(status_code=404, detail="Recurso não encontrado")
+
+
+async def cd_id_forcado(
+    usuario: dict, cd_id_solicitado: Optional[int], db: AsyncSession
+) -> Optional[int]:
+    """Equivalente a cd_codigo_forcado para rotas que filtram por cd_id
+    numérico. Se o CD do operador não for encontrado no banco (não deveria
+    acontecer), devolve um id inexistente (-1) em vez de None — None
+    significa "sem filtro" nessas rotas, o que vazaria todos os CDs."""
+    if usuario.get("role") == "admin":
+        return cd_id_solicitado
+    cd_codigo = usuario.get("cd")
+    if not cd_codigo:
+        return cd_id_solicitado
+    res = await db.execute(select(CentroDistribuicao).where(CentroDistribuicao.codigo == cd_codigo))
+    cd = res.scalar_one_or_none()
+    return cd.id if cd else -1
+
+
+@app.get("/api/auth/me", summary="Retorna os dados do usuário autenticado a partir do token")
+async def me(usuario: dict = Depends(usuario_autenticado)):
+    return usuario
 
 
 @app.on_event("startup")
@@ -371,16 +419,20 @@ async def ping():
 @app.get("/api/dashboard", summary="Dashboard consolidado tempo real")
 async def dashboard(
     cd_codigo: Optional[str] = None,
+    usuario: dict = Depends(usuario_autenticado),
     orq: Orquestrador = Depends(get_orq),
 ):
+    cd_codigo = cd_codigo_forcado(usuario, cd_codigo)
     return await orq.dashboard_tempo_real(cd_codigo)
 
 
 @app.get("/api/dashboard/coletas-pendentes", summary="Coletas aguardando confirmação, agregado por transportadora")
 async def dashboard_coletas_pendentes(
     cd_codigo: Optional[str] = None,
+    usuario: dict = Depends(usuario_autenticado),
     orq: Orquestrador = Depends(get_orq),
 ):
+    cd_codigo = cd_codigo_forcado(usuario, cd_codigo)
     return await orq.dashboard_coletas_pendentes(cd_codigo)
 
 
@@ -390,8 +442,10 @@ async def dashboard_coletas_pendentes(
 async def ondas_hoje(
     cd_codigo: Optional[str] = None,
     data:      Optional[str] = None,
+    usuario: dict = Depends(usuario_autenticado),
     db: AsyncSession = Depends(get_db),
 ):
+    cd_codigo = cd_codigo_forcado(usuario, cd_codigo)
     data_plano = date.fromisoformat(data) if data else date.today()
 
     # Resolve cd_id se filtro informado
@@ -468,8 +522,10 @@ async def ondas_hoje(
 async def ondas_proximos_dias(
     cd_codigo: Optional[str] = None,
     dias:      int           = 5,
+    usuario: dict = Depends(usuario_autenticado),
     db: AsyncSession = Depends(get_db),
 ):
+    cd_codigo = cd_codigo_forcado(usuario, cd_codigo)
     cd_id = None
     if cd_codigo:
         res_cd = await db.execute(
@@ -664,8 +720,10 @@ async def _coletar_historico_ondas(
 async def historico_ondas(
     periodo: str = "hoje",
     cd_codigo: Optional[str] = None,
+    usuario: dict = Depends(usuario_autenticado),
     db: AsyncSession = Depends(get_db),
 ):
+    cd_codigo = cd_codigo_forcado(usuario, cd_codigo)
     # Cache de 120s: só vale a pena para períodos largos (mes/trimestre/semestre/
     # ano), que são os que pesam de verdade — "hoje"/"ontem" são baratos e mudam
     # o dia todo, então seguem sempre ao vivo (sem cache).
@@ -693,8 +751,10 @@ async def exportar_historico_ondas(
     periodo: str = "mes",
     cd_codigo: Optional[str] = None,
     formato: str = "pdf",
+    usuario: dict = Depends(usuario_autenticado),
     db: AsyncSession = Depends(get_db),
 ):
+    cd_codigo = cd_codigo_forcado(usuario, cd_codigo)
     if formato not in ("pdf", "xlsx"):
         raise HTTPException(422, "formato inválido — use 'pdf' ou 'xlsx'")
 
@@ -891,13 +951,23 @@ def _historico_ondas_xlsx(
 
 
 @app.get("/api/ondas/{onda_id}/remessas", summary="Lista as remessas de uma onda")
-async def remessas_da_onda(onda_id: int, db: AsyncSession = Depends(get_db)):
+async def remessas_da_onda(
+    onda_id: int,
+    usuario: dict = Depends(usuario_autenticado),
+    db: AsyncSession = Depends(get_db),
+):
     res_onda = await db.execute(
-        select(Onda).options(selectinload(Onda.transportadora)).where(Onda.id == onda_id)
+        select(Onda)
+        .options(
+            selectinload(Onda.transportadora),
+            selectinload(Onda.plano).selectinload(PlanoDia.cd),
+        )
+        .where(Onda.id == onda_id)
     )
     onda = res_onda.scalar_one_or_none()
     if not onda:
         raise HTTPException(404, "Onda não encontrada")
+    verificar_acesso_cd(usuario, onda.plano.cd.codigo if onda.plano and onda.plano.cd else None)
 
     res = await db.execute(
         select(Remessa)
@@ -1015,8 +1085,10 @@ async def fechar_onda(
 async def listar_alertas(
     cd_id:      Optional[int] = None,
     severidade: Optional[str] = None,
+    usuario:    dict          = Depends(usuario_autenticado),
     db:         AsyncSession  = Depends(get_db),
 ):
+    cd_id = await cd_id_forcado(usuario, cd_id, db)
     filtros = [Alerta.resolvido == False]
     if cd_id:
         filtros.append(Alerta.cd_id == cd_id)
@@ -1205,8 +1277,10 @@ async def listar_remessas(
     sem_onda:          Optional[bool] = None,
     nf_emitida:        Optional[bool] = None,
     limit:             int            = 500,
+    usuario: dict = Depends(usuario_autenticado),
     db: AsyncSession = Depends(get_db),
 ):
+    cd_id = await cd_id_forcado(usuario, cd_id, db)
     filtros = []
     if cd_id:
         filtros.append(Remessa.cd_id == cd_id)
@@ -1386,11 +1460,18 @@ async def analisar_oportunidades(
 # ── PLANOS E ONDAS ────────────────────────────────────────────────────────────
 
 @app.get("/api/planos/{plano_id}", summary="Detalhe do plano e ondas")
-async def detalhe_plano(plano_id: int, db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(PlanoDia).where(PlanoDia.id == plano_id))
+async def detalhe_plano(
+    plano_id: int,
+    usuario: dict = Depends(usuario_autenticado),
+    db: AsyncSession = Depends(get_db),
+):
+    res = await db.execute(
+        select(PlanoDia).options(selectinload(PlanoDia.cd)).where(PlanoDia.id == plano_id)
+    )
     plano = res.scalar_one_or_none()
     if not plano:
         raise HTTPException(404, "Plano não encontrado")
+    verificar_acesso_cd(usuario, plano.cd.codigo if plano.cd else None)
 
     res_ondas = await db.execute(
         select(Onda).where(Onda.plano_id == plano_id).order_by(Onda.numero_onda)
@@ -1625,8 +1706,10 @@ async def detalhe_cliente(cliente_id: int, db: AsyncSession = Depends(get_db)):
 @app.get("/api/erros-upload", summary="Painel de Diagnóstico: duplicatas, abertos, sem NF (rota mantida por compatibilidade)")
 async def erros_upload(
     cd_codigo: Optional[str] = None,
+    usuario: dict = Depends(usuario_autenticado),
     db: AsyncSession = Depends(get_db),
 ):
+    cd_codigo = cd_codigo_forcado(usuario, cd_codigo)
     cd_id = None
     if cd_codigo:
         r = await db.execute(select(CentroDistribuicao).where(CentroDistribuicao.codigo == cd_codigo))
@@ -1733,13 +1816,18 @@ async def erros_upload(
 
 
 @app.get("/api/uploads/{upload_id}", summary="Detalhe de um upload e as remessas associadas")
-async def detalhe_upload(upload_id: int, db: AsyncSession = Depends(get_db)):
+async def detalhe_upload(
+    upload_id: int,
+    usuario: dict = Depends(usuario_autenticado),
+    db: AsyncSession = Depends(get_db),
+):
     res = await db.execute(
         select(Upload).options(selectinload(Upload.cd)).where(Upload.id == upload_id)
     )
     upload = res.scalar_one_or_none()
     if not upload:
         raise HTTPException(404, "Upload não encontrado")
+    verificar_acesso_cd(usuario, upload.cd.codigo if upload.cd else None)
 
     res_rem = await db.execute(
         select(Remessa)
@@ -1785,14 +1873,21 @@ async def get_historico(
     gravidade:         Optional[str]  = None,
     apenas_publico:    bool           = False,
     limit:             int            = 100,
+    usuario: dict = Depends(usuario_autenticado),
     db: AsyncSession = Depends(get_db),
 ):
+    cd_id = await cd_id_forcado(usuario, cd_id, db)
     query = select(HistoricoEventos).order_by(HistoricoEventos.timestamp.desc())
     if remessa_id:
         query = query.where(HistoricoEventos.remessa_id == remessa_id)
     if transportadora_id:
         query = query.where(HistoricoEventos.transportadora_id == transportadora_id)
     if cd_id:
+        # Estrito (não passa nulos): eventos sem cd_id (ex.: escalações do
+        # Resolvedor ou envios do Comunicador registrados antes da correção
+        # que passou a gravar cd_id nesses agentes) tinham "descricao" livre
+        # que já vazou dado de outro CD para operador em teste manual — falha
+        # fechado (esconde do operador) em vez de arriscar mostrar de novo.
         query = query.where(HistoricoEventos.cd_id == cd_id)
     if tipo_evento:
         query = query.where(HistoricoEventos.tipo_evento == tipo_evento)
@@ -1812,15 +1907,19 @@ AGENTES_ORIGENS = ["ingestor", "classificador", "montador", "comunicador", "moni
 
 
 @app.get("/api/agentes/status", summary="Última execução de cada agente")
-async def status_agentes(db: AsyncSession = Depends(get_db)):
+async def status_agentes(
+    usuario: dict = Depends(usuario_autenticado),
+    db: AsyncSession = Depends(get_db),
+):
+    cd_id = await cd_id_forcado(usuario, None, db)
     resultado = []
     for origem in AGENTES_ORIGENS:
-        res = await db.execute(
-            select(HistoricoEventos)
-            .where(HistoricoEventos.origem == origem)
-            .order_by(HistoricoEventos.timestamp.desc())
-            .limit(1)
-        )
+        query = select(HistoricoEventos).where(HistoricoEventos.origem == origem)
+        if cd_id:
+            # Estrito — ver comentário em get_historico() sobre eventos com
+            # cd_id nulo (fail closed: não mostra ao operador em caso de dúvida).
+            query = query.where(HistoricoEventos.cd_id == cd_id)
+        res = await db.execute(query.order_by(HistoricoEventos.timestamp.desc()).limit(1))
         evento = res.scalar_one_or_none()
         resultado.append({
             "agente":           origem,
@@ -1900,29 +1999,30 @@ class AssistenteChatSchema(BaseModel):
     mensagem_atual:     str
 
 
-async def _montar_contexto_sistema(db: AsyncSession) -> dict:
+async def _montar_contexto_sistema(db: AsyncSession, cd_id: Optional[int]) -> dict:
     """Snapshot do estado atual da operação — usado quando o assistente é
-    aberto de forma geral (botão flutuante), sem um erro específico em foco."""
-    res_status = await db.execute(
-        select(Remessa.status, func.count(Remessa.id))
-        .where(Remessa.data_extracao == date.today())
-        .group_by(Remessa.status)
-    )
+    aberto de forma geral (botão flutuante), sem um erro específico em foco.
+    cd_id (derivado do JWT) restringe o snapshot ao CD do usuário — o mesmo
+    assistente não pode revelar contagens/eventos de outro CD."""
+    q_status = select(Remessa.status, func.count(Remessa.id)).where(Remessa.data_extracao == date.today())
+    if cd_id:
+        q_status = q_status.where(Remessa.cd_id == cd_id)
+    res_status = await db.execute(q_status.group_by(Remessa.status))
     remessas_por_status = {status: qtd for status, qtd in res_status.all()}
 
-    res_alertas = await db.execute(
-        select(Alerta.severidade, func.count(Alerta.id))
-        .where(Alerta.resolvido == False)
-        .group_by(Alerta.severidade)
-    )
+    q_alertas = select(Alerta.severidade, func.count(Alerta.id)).where(Alerta.resolvido == False)
+    if cd_id:
+        q_alertas = q_alertas.where(Alerta.cd_id == cd_id)
+    res_alertas = await db.execute(q_alertas.group_by(Alerta.severidade))
     alertas_por_severidade = {sev: qtd for sev, qtd in res_alertas.all()}
 
-    res_erros = await db.execute(
-        select(HistoricoEventos)
-        .where(HistoricoEventos.tipo_evento.in_(["erro_sistema", "acao_resolvedor"]))
-        .order_by(HistoricoEventos.timestamp.desc())
-        .limit(3)
+    q_erros = select(HistoricoEventos).where(
+        HistoricoEventos.tipo_evento.in_(["erro_sistema", "acao_resolvedor"])
     )
+    if cd_id:
+        # Estrito — ver comentário em get_historico() sobre eventos com cd_id nulo.
+        q_erros = q_erros.where(HistoricoEventos.cd_id == cd_id)
+    res_erros = await db.execute(q_erros.order_by(HistoricoEventos.timestamp.desc()).limit(3))
     ultimos_erros = [
         {"timestamp": e.timestamp.strftime("%d/%m/%Y %H:%M"), "descricao": e.descricao}
         for e in res_erros.scalars().all()
@@ -1940,8 +2040,10 @@ async def _montar_contexto_sistema(db: AsyncSession) -> dict:
 @app.post("/api/assistente/chat", summary="Chat contextual do Assistente de Diagnóstico")
 async def chat_assistente(
     payload: AssistenteChatSchema,
+    usuario: dict = Depends(usuario_autenticado),
     db: AsyncSession = Depends(get_db),
 ):
+    cd_id = await cd_id_forcado(usuario, None, db)
     tipo_erro_dict = None
     eventos         = None
     contexto_geral  = None
@@ -1961,18 +2063,19 @@ async def chat_assistente(
 
         # Últimos eventos deste tipo de erro — todas as descrições do Resolvedor
         # seguem o padrão "Erro {codigo} ...", usado aqui para dar contexto de frequência.
-        res_hist = await db.execute(
-            select(HistoricoEventos)
-            .where(HistoricoEventos.descricao.like(f"Erro {payload.tipo_erro} %"))
-            .order_by(HistoricoEventos.timestamp.desc())
-            .limit(5)
+        q_hist = select(HistoricoEventos).where(
+            HistoricoEventos.descricao.like(f"Erro {payload.tipo_erro} %")
         )
+        if cd_id:
+            # Estrito — ver comentário em get_historico() sobre eventos com cd_id nulo.
+            q_hist = q_hist.where(HistoricoEventos.cd_id == cd_id)
+        res_hist = await db.execute(q_hist.order_by(HistoricoEventos.timestamp.desc()).limit(5))
         eventos = [
             {"timestamp": e.timestamp.strftime("%d/%m/%Y %H:%M"), "descricao": e.descricao}
             for e in res_hist.scalars().all()
         ]
     else:
-        contexto_geral = await _montar_contexto_sistema(db)
+        contexto_geral = await _montar_contexto_sistema(db, cd_id)
 
     from agents.agente_assistente import AgenteAssistente
     try:
@@ -3002,8 +3105,10 @@ async def comparativo_cotacao(
 @app.get("/api/relatorio/pdf", summary="Exportar PDF das Ondas do Dia")
 async def relatorio_pdf(
     cd_codigo: Optional[str] = None,
+    usuario: dict = Depends(usuario_autenticado),
     db: AsyncSession = Depends(get_db),
 ):
+    cd_codigo = cd_codigo_forcado(usuario, cd_codigo)
     import io
     from datetime import datetime
     from reportlab.lib import colors

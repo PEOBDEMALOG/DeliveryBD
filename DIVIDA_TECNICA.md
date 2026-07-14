@@ -84,7 +84,8 @@ que o código não entrega.
 `vercel.json` agenda `/api/resolvedor/executar` só às 6h da manhã
 (`"schedule": "0 6 * * *"`), confirmado em `api/main.py:1868-1887`
 (comentário explícito: *"Vercel Cron, 1x/dia — limite do plano Hobby"*) e
-em `README.md:301`. Verificado (13/07/2026, durante o diagnóstico da
+em `docs/ARQUITETURA.md:308` (conteúdo migrado do README em 14/07/2026).
+Verificado (13/07/2026, durante o diagnóstico da
 feature de confirmação de coleta) que essa frequência **é a limitação real
 do plano Vercel atual** (Hobby restringe cron a no mínimo 1x/dia) — não é
 uma divergência acidental de configuração nem um cron mais frequente que

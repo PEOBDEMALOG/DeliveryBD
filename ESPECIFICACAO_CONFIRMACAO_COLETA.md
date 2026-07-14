@@ -200,7 +200,8 @@ verifiquei o ponto levantado sobre a real capacidade de cron do projeto:
   — nem no código, nem em `vercel.json`, nem em nenhum outro lugar. A única menção a "5
   minutos" no projeto inteiro é um texto de ajuda não relacionado a cron
   (`scripts/seed_tipos_erro.py:30`, sobre esperar antes de reprocessar upload).
-- O próprio `README.md:301` já documenta isso como limitação conhecida: *"Scheduler mais
+- O próprio `docs/ARQUITETURA.md:308` (conteúdo migrado do README em 14/07/2026) já
+  documenta isso como limitação conhecida: *"Scheduler mais
   frequente para verificação de SLA (hoje limitado a 1x/dia pelo cron do plano Hobby)"* —
   listado como item de melhoria futura ("Alta" prioridade), não como algo que já funciona.
 - Ou seja: não há indício de que o projeto dependa hoje de um cron de 5 minutos que possa

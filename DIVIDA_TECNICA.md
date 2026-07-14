@@ -104,6 +104,36 @@ destravar coletas paradas em questão de horas.
 
 ## Concluído (registro, não pendência)
 
+### Vazamento de dados entre CDs (13/07/2026)
+Causa raiz sistêmica: 11+ endpoints (`/api/dashboard`,
+`/api/dashboard/coletas-pendentes`, `/api/ondas-hoje`,
+`/api/ondas/proximos-dias`, `/api/ondas/historico` e
+`/historico/exportar`, `/api/alertas`, `/api/remessas`,
+`/api/erros-upload`, `/api/historico`, `/api/relatorio/pdf`, além de
+`/api/agentes/status` e `/api/assistente/chat` encontrados na auditoria)
+aceitavam `cd_id`/`cd_codigo` como parâmetro vindo do cliente (query
+param) em vez de derivar do JWT do usuário autenticado. Um operador
+logado num CD conseguia ver dado de outro CD em qualquer uma dessas
+telas — revelado em teste manual com os perfis Timoteo (OSA) e Carlos
+(ITJ) no fluxo Pendentes → Rastreio Consolidado/Alertas Ativos/Painel
+de Diagnóstico.
+
+**Corrigido** via dependency `usuario_autenticado` centralizada
+(`api/main.py`) + helpers `cd_codigo_forcado`/`cd_id_forcado`: para
+`role=operador` o CD é sempre lido do token, ignorando qualquer valor
+que o cliente mande na URL; endpoints de detalhe por id
+(`/api/uploads/{id}`, `/api/ondas/{id}/remessas`, `/api/planos/{id}`)
+passaram a checar posse do CD e devolver 404 em vez de vazar.
+
+**RECOMENDAÇÃO DE PROCESSO:** todo endpoint novo que retorne dado de
+remessa/alerta/histórico/onda **DEVE** usar `usuario_autenticado` +
+`cd_codigo_forcado`/`cd_id_forcado` — nunca aceitar `cd_id`/`cd_codigo`
+como query param manipulável para `role=operador`. Considerar um teste
+automatizado (mesmo que simples) que rode contra todos os endpoints
+registrados no `app` e falhe se algum aceitar um `cd_id` que não bata
+com o CD do token para `role=operador`, evitando regressão futura —
+hoje essa garantia depende só de revisão manual em cada PR.
+
 ### Cálculo de motivo de pendência unificado no backend
 Antes: `motivoBloqueio(r)` duplicava no frontend (`index.html`) a mesma
 lógica de `_pendentes_detalhe()` no backend (`agents/agente_monitor.py`).

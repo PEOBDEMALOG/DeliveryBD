@@ -82,7 +82,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 RELATORIOS_DIR = BASE_DIR / "data" / "outputs" / "testes_offline"
 
 USUARIO = "erick"
-SENHA = "***REDACTED***"
+SENHA = "tsy77jKL9uTDoR3g"
 
 PING_INTERVALO_S = 15  # deve casar com o setInterval de iniciarMonitoramentoConexao (front)
 FALHAS_PARA_ENTRAR = 3  # falhasConsecutivas >= 3 -> entrarEmContingencia()

@@ -31,7 +31,7 @@ sys.path.insert(0, str(ROOT))
 
 import httpx
 
-LOGIN_DEMO = {"usuario": "erick", "senha": "***REDACTED***"}
+LOGIN_DEMO = {"usuario": "erick", "senha": "tsy77jKL9uTDoR3g"}
 
 
 async def _login(client: httpx.AsyncClient) -> str:

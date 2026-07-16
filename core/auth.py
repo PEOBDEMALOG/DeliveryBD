@@ -13,19 +13,19 @@ ALGORITHM = "HS256"
 
 USUARIOS = {
     "timoteo": {
-        "senha": "***REDACTED***",
+        "senha": "L81A9mhthJE2Ztj9",
         "nome":  "Timoteo Silva",
         "cd":    "OSA",
         "role":  "operador",
     },
     "carlos": {
-        "senha": "***REDACTED***",
+        "senha": "uWOX2fhOiJRl7PY0",
         "nome":  "Carlos Mendes",
         "cd":    "ITJ",
         "role":  "operador",
     },
     "erick": {
-        "senha": "***REDACTED***",
+        "senha": "tsy77jKL9uTDoR3g",
         "nome":  "Erick Antônio",
         "cd":    None,
         "role":  "admin",

@@ -23,7 +23,7 @@ from pathlib import Path
 BASE_URL = "http://127.0.0.1:8000"
 ROOT = Path(__file__).resolve().parent.parent
 
-USUARIO_DEMO = {"usuario": "timoteo", "senha": "***REDACTED***"}
+USUARIO_DEMO = {"usuario": "timoteo", "senha": "L81A9mhthJE2Ztj9"}
 
 
 def _call(method: str, path: str, body: dict | None = None, token: str | None = None):

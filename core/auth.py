@@ -1,7 +1,9 @@
 # peo_bd/core/auth.py
 # Autenticação JWT stateless — 3 usuários fictícios para demo.
-# Senhas em texto puro propositalmente: são credenciais de demonstração,
-# não há cadastro de usuários reais nem persistência em banco.
+# Não há cadastro de usuários reais nem persistência em banco. Senhas vêm
+# de variáveis de ambiente (core/config.py) — nunca hardcoded aqui: um
+# valor fixo neste arquivo é uma credencial real exposta em texto puro no
+# código-fonte, como já aconteceu antes (ver docs/adr/ sobre a rotação).
 
 from datetime import datetime, timedelta
 
@@ -13,19 +15,19 @@ ALGORITHM = "HS256"
 
 USUARIOS = {
     "timoteo": {
-        "senha": "***REDACTED***",
+        "senha": settings.AUTH_SENHA_TIMOTEO,
         "nome":  "Timoteo Silva",
         "cd":    "OSA",
         "role":  "operador",
     },
     "carlos": {
-        "senha": "***REDACTED***",
+        "senha": settings.AUTH_SENHA_CARLOS,
         "nome":  "Carlos Mendes",
         "cd":    "ITJ",
         "role":  "operador",
     },
     "erick": {
-        "senha": "***REDACTED***",
+        "senha": settings.AUTH_SENHA_ERICK,
         "nome":  "Erick Antônio",
         "cd":    None,
         "role":  "admin",

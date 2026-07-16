@@ -19,6 +19,7 @@ rota /api/* (exceto login/ping) — o script faz login com o usuário demo
 
 import argparse
 import asyncio
+import os
 import sys
 import time
 from datetime import datetime
@@ -31,7 +32,16 @@ sys.path.insert(0, str(ROOT))
 
 import httpx
 
-LOGIN_DEMO = {"usuario": "erick", "senha": "***REDACTED***"}
+# Senha nunca hardcoded aqui — este script pode rodar contra um deploy real
+# (--base-url), então um valor fixo no código seria a senha de produção em
+# texto puro. Configure a mesma env var que o servidor alvo usa.
+_senha_erick = os.environ.get("AUTH_SENHA_ERICK")
+if not _senha_erick:
+    sys.exit(
+        "AUTH_SENHA_ERICK não configurada — defina a variável de ambiente "
+        "com a senha do usuário 'erick' no ambiente alvo antes de rodar este script."
+    )
+LOGIN_DEMO = {"usuario": "erick", "senha": _senha_erick}
 
 
 async def _login(client: httpx.AsyncClient) -> str:

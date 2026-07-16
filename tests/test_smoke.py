@@ -14,6 +14,7 @@
 #   pytest tests/test_smoke.py -v
 
 import json
+import os
 import subprocess
 import sys
 import urllib.error
@@ -23,7 +24,9 @@ from pathlib import Path
 BASE_URL = "http://127.0.0.1:8000"
 ROOT = Path(__file__).resolve().parent.parent
 
-USUARIO_DEMO = {"usuario": "timoteo", "senha": "***REDACTED***"}
+# Senha vem da mesma env var que o servidor local usou pra subir (ver
+# .github/workflows/ci.yml) — nunca hardcoded aqui.
+USUARIO_DEMO = {"usuario": "timoteo", "senha": os.environ["AUTH_SENHA_TIMOTEO"]}
 
 
 def _call(method: str, path: str, body: dict | None = None, token: str | None = None):

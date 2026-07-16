@@ -82,7 +82,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 RELATORIOS_DIR = BASE_DIR / "data" / "outputs" / "testes_offline"
 
 USUARIO = "erick"
-SENHA = "***REDACTED***"
+# SOMENTE TESTE LOCAL, NUNCA USAR EM DEPLOY — casa com o AUTH_SENHA_ERICK
+# injetado em _env() abaixo pro servidor isolado que esta suíte sobe.
+SENHA = "SOMENTE-TESTE-LOCAL-NUNCA-USAR-EM-DEPLOY"
 
 PING_INTERVALO_S = 15  # deve casar com o setInterval de iniciarMonitoramentoConexao (front)
 FALHAS_PARA_ENTRAR = 3  # falhasConsecutivas >= 3 -> entrarEmContingencia()
@@ -176,6 +178,12 @@ class ServidorTeste:
         # suíte conseguir assinar/validar tokens contra o SQLite isolado
         # acima; não é (e não deve virar) o segredo real de nenhum ambiente.
         env.setdefault("JWT_SECRET", "SOMENTE-TESTE-LOCAL-NUNCA-USAR-EM-DEPLOY")
+        # Idem para as senhas — valores fixos só pro servidor isolado acima;
+        # timoteo/carlos não fazem login nesta suíte, só erick, mas o
+        # servidor exige as 3 vars pra subir (core/config.py).
+        env.setdefault("AUTH_SENHA_TIMOTEO", "SOMENTE-TESTE-LOCAL-NUNCA-USAR-EM-DEPLOY")
+        env.setdefault("AUTH_SENHA_CARLOS", "SOMENTE-TESTE-LOCAL-NUNCA-USAR-EM-DEPLOY")
+        env.setdefault("AUTH_SENHA_ERICK", SENHA)
         # Trava de segurança: essa suíte só pode rodar contra o SQLite
         # isolado que ela mesma cria acima — nunca contra um Postgres real
         # (dev, teste ou produção). Se algo sobrescrever DATABASE_URL depois

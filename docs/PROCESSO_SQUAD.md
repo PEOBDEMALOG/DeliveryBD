@@ -221,10 +221,10 @@ qualquer endpoint futuro.
 
 ## Referências
 
-- [`WORKFLOW.md`](../WORKFLOW.md) — os dois ambientes (`origin`/`producao`),
+- [`WORKFLOW.md`](WORKFLOW.md) — os dois ambientes (`origin`/`producao`),
   comandos de promoção, e o checklist de teste de vazamento de CD antes do
   primeiro upload real em produção.
-- [`DIVIDA_TECNICA.md`](../DIVIDA_TECNICA.md) — todas as pendências e
+- [`DIVIDA_TECNICA.md`](DIVIDA_TECNICA.md) — todas as pendências e
   registros de processo (incluindo o incidente que originou a Regra 3
   acima, em detalhe).
 - [`ONBOARDING.md`](ONBOARDING.md) — setup local, convenções de código,

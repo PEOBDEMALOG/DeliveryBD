@@ -63,7 +63,7 @@ def test_checklist_stress_informativo():
     (scripts/seed_demo.py), os testes de volume/formato de dado
     (ex: transportadora com histórico, limit=1000) não têm dado
     suficiente pra passar por construção, não por bug — ver
-    DIVIDA_TECNICA.md → achados sobre T05/T07/T09/T10 com dataset leve."""
+    docs/DIVIDA_TECNICA.md → achados sobre T05/T07/T09/T10 com dataset leve."""
     resultado = subprocess.run(
         [
             sys.executable, str(ROOT / "tests" / "executar_testes.py"),

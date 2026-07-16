@@ -7,7 +7,7 @@ Histórico de mudanças relevantes do projeto, agrupado por data/marco de
 trabalho. Formato inspirado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/)
 (seções Added/Changed/Fixed/Security/Docs) — sem versionamento semântico,
 já que o projeto não usa tags/releases, só os dois ambientes `origin`/
-`producao` (ver `WORKFLOW.md`).
+`producao` (ver `docs/WORKFLOW.md`).
 
 Este arquivo é **retroativo** até `de36ef3` (07/07/2026), primeiro commit
 do repositório atual (versões V1-V5 tinham histórico git próprio,
@@ -52,7 +52,7 @@ frente, todo commit relevante ganha uma linha nova aqui — ver
   pro mesmo valor, mas por coincidência, não por dependerem uma da
   outra; agora é uma fonte única de verdade. Duplicação nunca tinha sido
   registrada como pendência formal — ver entrada nova em
-  `DIVIDA_TECNICA.md` → "Concluído". (`ab2ee49`)
+  `docs/DIVIDA_TECNICA.md` → "Concluído". (`ab2ee49`)
 
 ### Added
 - Nova documentação técnica: `docs/ARQUITETURA.md`, `docs/ONBOARDING.md`
@@ -95,7 +95,7 @@ frente, todo commit relevante ganha uma linha nova aqui — ver
 - Novo card "Turnaround de Coleta por Transportadora" no dashboard,
   substitui "Status das Remessas". (`dd4615e`)
 - Especificação da feature de confirmação de coleta por e-mail com
-  realocação automática (`ESPECIFICACAO_CONFIRMACAO_COLETA.md`),
+  realocação automática (`docs/ESPECIFICACAO_CONFIRMACAO_COLETA.md`),
   revisada com 5 correções depois da primeira versão. (`9dc5341`,
   `3982566`)
 
@@ -165,7 +165,7 @@ frente, todo commit relevante ganha uma linha nova aqui — ver
 
 ### Docs
 - Documentado o fluxo `origin`/`producao` (embrião do que hoje é
-  `WORKFLOW.md`). (`14272da`)
+  `docs/WORKFLOW.md`). (`14272da`)
 - Documentada dívida técnica: senhas hardcoded em `core/auth.py` e
   rotação pendente do `JWT_SECRET` em produção. (`7221868`)
 

@@ -140,7 +140,7 @@ Antes de promover qualquer mudança para `producao`, siga o processo em
 
 ## 5. Leitura obrigatória antes de mexer em áreas sensíveis
 
-Leia [`DIVIDA_TECNICA.md`](../DIVIDA_TECNICA.md) inteiro antes de tocar em:
+Leia [`DIVIDA_TECNICA.md`](DIVIDA_TECNICA.md) inteiro antes de tocar em:
 
 - **Autenticação / JWT** (`core/auth.py`, middleware `exigir_jwt` em
   `api/main.py`) — inclui a pendência de senhas em texto puro e a rotação

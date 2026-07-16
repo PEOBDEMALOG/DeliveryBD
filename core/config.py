@@ -108,25 +108,6 @@ class Settings:
         )
     JWT_SECRET: str = _jwt_secret_env
 
-    # ── Senhas dos 3 usuários (core/auth.py) ────────────────
-    # Mesmo raciocínio do JWT_SECRET acima: sem fallback hardcoded, pra um
-    # valor default aqui não ficar exposto no código-fonte servindo de
-    # senha real caso a env var nunca seja configurada.
-    _auth_senhas_env = {
-        "AUTH_SENHA_TIMOTEO": os.getenv("AUTH_SENHA_TIMOTEO"),
-        "AUTH_SENHA_CARLOS":  os.getenv("AUTH_SENHA_CARLOS"),
-        "AUTH_SENHA_ERICK":   os.getenv("AUTH_SENHA_ERICK"),
-    }
-    _auth_senhas_faltando = [k for k, v in _auth_senhas_env.items() if not v]
-    if _auth_senhas_faltando:
-        raise RuntimeError(
-            f"Variáveis de ambiente não configuradas: {', '.join(_auth_senhas_faltando)} — "
-            "defina-as antes de subir a aplicação."
-        )
-    AUTH_SENHA_TIMOTEO: str = _auth_senhas_env["AUTH_SENHA_TIMOTEO"]
-    AUTH_SENHA_CARLOS:  str = _auth_senhas_env["AUTH_SENHA_CARLOS"]
-    AUTH_SENHA_ERICK:   str = _auth_senhas_env["AUTH_SENHA_ERICK"]
-
     # ── Regras de negócio BD ────────────────────────────────
     DIAS_ESPERA_FTL:         int   = 5
     # Volume mínimo (m³) para valer a pena consolidar fracionado em FTL.

@@ -37,9 +37,6 @@ jobs:
           # Só pra satisfazer o fail-fast de core/config.py — nunca usado
           # fora deste job efêmero, sem banco real conectado.
           JWT_SECRET: ci-throwaway-secret-nunca-usado-fora-deste-runner
-          AUTH_SENHA_TIMOTEO: ci-throwaway-secret-nunca-usado-fora-deste-runner
-          AUTH_SENHA_CARLOS: ci-throwaway-secret-nunca-usado-fora-deste-runner
-          AUTH_SENHA_ERICK: ci-throwaway-secret-nunca-usado-fora-deste-runner
         run: |
           python -c "
           import importlib, pkgutil, sys
@@ -75,9 +72,6 @@ jobs:
     needs: lint
     env:
       JWT_SECRET: ci-throwaway-secret-nunca-usado-fora-deste-runner
-      AUTH_SENHA_TIMOTEO: ci-throwaway-secret-nunca-usado-fora-deste-runner
-      AUTH_SENHA_CARLOS: ci-throwaway-secret-nunca-usado-fora-deste-runner
-      AUTH_SENHA_ERICK: ci-throwaway-secret-nunca-usado-fora-deste-runner
     steps:
       - uses: actions/checkout@v4
 

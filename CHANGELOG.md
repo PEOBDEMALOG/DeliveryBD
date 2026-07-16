@@ -65,14 +65,14 @@ frente, todo commit relevante ganha uma linha nova aqui — ver
   sanidade + smoke test/checklist contra SQLite a cada push/PR, com
   `tests/test_smoke.py` como wrapper pytest fino sobre a validação já
   existente. Escopo documentado em `docs/CI.md`. (`f06c664`)
-- `requirements.lock.txt`: lockfile de reprodutibilidade exata (via
+- `config/requirements.lock.txt`: lockfile de reprodutibilidade exata (via
   pip-tools), fixando `python-jose==3.5.0`/`python-multipart==0.0.32`
   (o upgrade de segurança acima) e toda dependência transitiva. CI passa
-  a instalar a partir dele em vez de `requirements.txt` solto. (`3a499cc`)
+  a instalar a partir dele em vez de `config/requirements.txt` solto. (`3a499cc`)
 - `pyproject.toml`: projeto empacotado como pacote Python instalável
   (`pip install -e .`), layout flat — `agents`, `api`, `core` continuam
   nos mesmos caminhos, nenhum import existente mudou. Dependências
-  espelham `requirements.txt` dinamicamente (sem duplicar a lista). CI
+  espelham `config/requirements.txt` dinamicamente (sem duplicar a lista). CI
   passa a validar o empacotamento em todo push. Validado depois: suíte
   `tests/testar_offline.py` (Playwright), login/dashboard manual como
   `timoteo`/OSA e `carlos`/ITJ, e deploy real em `origin` (não só CI) —

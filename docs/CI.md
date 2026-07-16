@@ -11,8 +11,8 @@ passar):
 ## O que o CI cobre
 
 ### Job 1 — `lint` (import de sanidade)
-Instala `requirements.lock.txt` (versão exata, mesma usada em produção —
-não `requirements.txt` solto, ver `ARQUITETURA.md` → "Setup rápido"),
+Instala `config/requirements.lock.txt` (versão exata, mesma usada em produção —
+não `config/requirements.txt` solto, ver `ARQUITETURA.md` → "Setup rápido"),
 depois `pip install -e .` (valida que `pyproject.toml` continua
 empacotando `agents`/`api`/`core` corretamente), e importa todo módulo de
 `core/`, `agents/` e `api/`. Pega erro de sintaxe, import quebrado

@@ -10,5 +10,5 @@ if ($linhas) {
 }
 
 Write-Host "Iniciando PEO-BD na porta $porta..."
-Set-Location $PSScriptRoot
+Set-Location (Split-Path $PSScriptRoot -Parent)
 python -m uvicorn api.main:app --reload --host 0.0.0.0 --port $porta

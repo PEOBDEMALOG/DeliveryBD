@@ -9,14 +9,14 @@ description = "PEO-BD — Agente robô de Planejamento de Expedição Outbound (
 requires-python = ">=3.11"
 dynamic = ["dependencies"]
 
-# Espelha requirements.txt em vez de duplicar a lista de dependências —
+# Espelha config/requirements.txt em vez de duplicar a lista de dependências —
 # uma única fonte de verdade. Isso inclui pytest (ver seção "Testes" de
-# requirements.txt), então o pacote instalado carrega uma dependência de
+# config/requirements.txt), então o pacote instalado carrega uma dependência de
 # teste junto; aceitável dado que o projeto já mantém as duas coisas no
 # mesmo arquivo, e simplifica não introduzir um requirements-dev.txt só
 # por causa disto.
 [tool.setuptools.dynamic]
-dependencies = { file = ["requirements.txt"] }
+dependencies = { file = ["config/requirements.txt"] }
 
 # Layout flat, de propósito — agents/, api/, core/ continuam nos mesmos
 # caminhos de sempre (nenhum import existente muda). Só esses 3 pacotes

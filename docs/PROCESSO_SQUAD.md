@@ -119,9 +119,9 @@ são verdade:
   passa por pelo menos um outro par de olhos antes de ir para `origin`.
   Trabalho solo temporário (squad de 1 pessoa) é exceção documentada, não
   o padrão esperado quando houver mais de uma pessoa na squad.
-- [ ] **`requirements.lock.txt` regenerado no mesmo commit, se
-  `requirements.txt` mudou** — `pip install pip-tools && pip-compile
-  --output-file=requirements.lock.txt requirements.txt`. Esquecer esse
+- [ ] **`config/requirements.lock.txt` regenerado no mesmo commit, se
+  `config/requirements.txt` mudou** — `pip install pip-tools && pip-compile
+  --output-file=config/requirements.lock.txt config/requirements.txt`. Esquecer esse
   passo é silencioso: o CI continua instalando a partir do lockfile (ver
   `docs/CI.md`), então passaria verde testando a versão **antiga**,
   escondendo exatamente o cenário que o lockfile existe pra prevenir —

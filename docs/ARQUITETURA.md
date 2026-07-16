@@ -41,7 +41,7 @@ dev local), Pydantic (schemas de request/response), `python-jose` (JWT
 HS256), `python-multipart` (upload), `pandas`/`openpyxl`/`xlrd` (leitura de
 planilhas SAP/UPS WMS), `reportlab` (geração de PDF server-side), SDK da
 Anthropic (Assistente de Diagnóstico), envio de e-mail via SMTP e/ou Resend.
-Lista completa e versões exatas em `requirements.txt`.
+Lista completa e versões exatas em `config/requirements.txt`.
 
 **Frontend** — SPA em arquivo único (`frontend/index.html`), sem build step:
 Alpine.js (reatividade/estado), Tailwind CSS via CDN (estilo), SheetJS/`xlsx.js`
@@ -98,9 +98,11 @@ peo_bd/
 │   ├── testar_offline.py          # Suíte Playwright do Modo de Contingência offline
 │   └── test_smoke.py              # Wrapper pytest fino sobre os dois acima (usado pelo CI)
 ├── .github/workflows/ci.yml       # CI: import de sanidade + smoke test (ver docs/CI.md)
+├── config/
+│   ├── requirements.txt            # Dependências diretas — editar aqui pra atualizar versão
+│   ├── requirements.lock.txt       # Versão exata (direta + transitiva) — instalar a partir daqui
+│   └── start.ps1                   # Windows: mata a porta 8000 se ocupada e sobe com --reload
 ├── pyproject.toml                  # Empacota agents/api/core (pip install -e .) — layout flat
-├── requirements.txt                # Dependências diretas — editar aqui pra atualizar versão
-├── requirements.lock.txt           # Versão exata (direta + transitiva) — instalar a partir daqui
 ├── vercel.json                    # Deploy serverless (build + cron do Resolvedor)
 └── README.md
 ```
@@ -117,15 +119,15 @@ peo_bd/
 
 ### 2. Instalar dependências
 ```bash
-pip install -r requirements.lock.txt
+pip install -r config/requirements.lock.txt
 ```
-Usa `requirements.lock.txt` (versão exata de toda dependência, direta e
-transitiva) em vez de `requirements.txt` — reproduz exatamente o que
-roda em CI/produção. `requirements.txt` continua sendo a lista de
+Usa `config/requirements.lock.txt` (versão exata de toda dependência, direta e
+transitiva) em vez de `config/requirements.txt` — reproduz exatamente o que
+roda em CI/produção. `config/requirements.txt` continua sendo a lista de
 dependências diretas/soltas: edite lá quando for atualizar versão
 deliberadamente, e regenere o lockfile no mesmo commit (`pip install
-pip-tools && pip-compile --output-file=requirements.lock.txt
-requirements.txt`) — ver `docs/PROCESSO_SQUAD.md` → Definição de Pronto.
+pip-tools && pip-compile --output-file=config/requirements.lock.txt
+config/requirements.txt`) — ver `docs/PROCESSO_SQUAD.md` → Definição de Pronto.
 
 Opcional: `pip install -e .` (usa `pyproject.toml`, layout flat — `agents/`,
 `api/`, `core/` continuam nos mesmos caminhos, nenhum import muda) empacota
@@ -158,7 +160,7 @@ python scripts/seed_transportadoras.py
 ### 5. Subir a API
 ```bash
 # Windows: mata a porta 8000 se já estiver em uso e sobe com --reload
-./start.ps1
+./config/start.ps1
 # ou diretamente:
 uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
 ```
@@ -317,7 +319,7 @@ máquina local.
 
 ### V2 — Ajustes de MVP
 Correções no pipeline (`main.py`, `models.py`, `seed_demo.py`) e no frontend,
-mais dados de demonstração com backlog. Introduz `start.ps1` (sobe a API
+mais dados de demonstração com backlog. Introduz `config/start.ps1` (sobe a API
 liberando a porta 8000 automaticamente) e os primeiros logs de servidor.
 
 ### V3 — Preparação para nuvem (idas e vindas com Vercel)

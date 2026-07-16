@@ -16,7 +16,7 @@ cada cenário precisa validar:
     cenário precisa que só uma parte das chamadas falhe no meio de uma
     sequência (cenário O06).
 
-Instalação (não faz parte do requirements.txt — só é necessário para rodar
+Instalação (não faz parte do config/requirements.txt — só é necessário para rodar
 esta suíte manualmente):
     pip install playwright httpx
     playwright install chromium

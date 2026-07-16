@@ -14,8 +14,8 @@ antes de mexer em áreas sensíveis.
 Passo a passo completo está em `ARQUITETURA.md` → "Setup rápido (local)".
 Resumo do fluxo:
 
-1. Python 3.11+, `pip install -r requirements.lock.txt` (versão exata,
-   reproduz CI/produção — `requirements.txt` é só a lista de
+1. Python 3.11+, `pip install -r config/requirements.lock.txt` (versão exata,
+   reproduz CI/produção — `config/requirements.txt` é só a lista de
    dependências diretas, usada pra atualizar versão deliberadamente).
    Opcional: `pip install -e .` empacota o projeto (`pyproject.toml`,
    layout flat) além de instalar as dependências — evita depender do
@@ -27,7 +27,7 @@ Resumo do fluxo:
    do projeto ou copie do cofre de credenciais que a equipe usa).
 3. Rodar os scripts de seed (`scripts/seed_demo.py` e os 3 seguintes,
    listados em `ARQUITETURA.md`).
-4. Subir a API (`./start.ps1` no Windows, ou `uvicorn api.main:app --reload`).
+4. Subir a API (`./config/start.ps1` no Windows, ou `uvicorn api.main:app --reload`).
 5. Login em `POST /api/auth/login` com um dos 3 usuários demo definidos em
    `core/auth.py` (credenciais não ficam em nenhuma documentação — peça
    diretamente).

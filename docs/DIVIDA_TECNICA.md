@@ -264,7 +264,7 @@ atrás do middleware JWT).
 especificado — 3.4.0 corrige os mesmos CVEs mas declara `pyasn1<0.5.0`, o
 que força downgrade do `pyasn1` pra uma versão com 2 CVEs de DoS próprios
 conhecidos, CVE-2026-30922/CVE-2026-23490; confirmado com
-`pip install -r requirements.txt` limpo que a combinação 3.4.0 +
+`pip install -r config/requirements.txt` limpo que a combinação 3.4.0 +
 `pyasn1` corrigido é `ResolutionImpossible`. 3.5.0 relaxa pra
 `pyasn1>=0.5.0` e resolve limpo). `python-multipart` → **0.0.32** (última
 estável — corrige as 4 vulnerabilidades do 0.0.28, patched versions
@@ -274,7 +274,7 @@ legítimo validados contra o servidor com as versões novas — zero falhas.
 
 **RECOMENDAÇÃO DE PROCESSO:** ao seguir uma recomendação de upgrade de
 versão vinda de advisory, sempre confirmar com `pip install -r
-requirements.txt` num ambiente limpo antes de assumir que a versão
+config/requirements.txt` num ambiente limpo antes de assumir que a versão
 "patched" citada no CVE é a escolha certa — o patch de uma lib pode
 empurrar uma dependência transitiva pra uma versão pior.
 

@@ -38,6 +38,39 @@ grande e arriscada que pode quebrar `origin` por dias), considere uma
 branch — não é proibido, só não é o padrão atual. Documente a decisão no
 registro do backlog se fugir do padrão.
 
+### 1.1 Proteção de branch em `origin`: decisão registrada (16/07/2026)
+
+`origin` (`marciobarbarulo10-oss/Projeto-BD`) é um repositório **privado**.
+O GitHub Free não oferece branch protection (nem clássica, nem rulesets)
+em repositórios privados — só em públicos, ou em privados com plano
+Pro/Team/Enterprise. Testado nesta data: com o repo temporariamente
+público, uma configuração de proteção (PR obrigatório, CI obrigatório,
+sem force-push, `enforce_admins`) bloqueava push direto de verdade
+(rejeitado pelo GitHub, `GH006: Protected branch update failed`); assim
+que o repo voltou a ser privado, a mesma proteção foi **desativada
+automaticamente** — não fica pausada, deixa de existir, e um push direto
+sem PR voltou a ser aceito sem nenhum bloqueio (confirmado na prática).
+
+**Decisão consciente:** manter o repositório **privado** e aceitar que a
+disciplina de branch + PR + CI antes de merge em `main` é seguida **por
+convenção** (revisão manual), não por trava técnica do GitHub.
+Privacidade do código (não é open source, contém lógica de negócio da
+Emalog) pesou mais que ter enforcement automático — não há hoje uma
+segunda pessoa fixa na squad para justificar o custo do GitHub Pro só
+para habilitar a trava.
+
+Na prática, a partir de agora:
+- Toda mudança não-trivial passa por branch e PR por hábito da squad, mas
+  nada no GitHub impede tecnicamente um push direto que pule esse fluxo.
+- O CI (`.github/workflows/ci.yml`) roda em todo push/PR independente de
+  branch protection — mas nada bloqueia um merge com CI vermelho.
+- A revisão por uma segunda pessoa antes do push (seção 3, Definição de
+  Pronto) continua sendo, por natureza, uma convenção informal.
+
+**Reavaliar se:** o repositório precisar ficar público por outro motivo,
+uma segunda pessoa entrar fixa na squad, ou o custo do GitHub Pro deixar
+de ser um problema.
+
 ---
 
 ## 2. Convenção de mensagem de commit
@@ -184,10 +217,13 @@ incidente que as originou já esteja resolvido.
 ### Regra 1 — Nunca commitar credencial em texto puro
 
 Toda credencial (senha, chave de API, secret de assinatura) é variável de
-ambiente, nunca literal no código. Exceção conhecida e **não** um
-precedente: `core/auth.py` guarda as senhas dos 3 usuários demo em texto
-puro — é dívida técnica documentada e pendente de correção (ver
-`DIVIDA_TECNICA.md`), não um padrão a seguir em código novo.
+ambiente, nunca literal no código. `core/auth.py` já seguiu esse padrão
+antes de ser corrigido — as senhas dos 3 usuários demo ficaram em texto
+puro no código-fonte por um tempo, inclusive sobrevivendo a uma rotação
+anterior que só trocou o valor sem resolver o problema real. Corrigido em
+16/07/2026 (senhas movidas para `AUTH_SENHA_TIMOTEO`/`CARLOS`/`ERICK`,
+fail-fast igual ao `JWT_SECRET`) — ver `DIVIDA_TECNICA.md` para o
+histórico completo do incidente.
 
 ### Regra 2 — Variável de ambiente sensível é fail-fast, nunca tem default silencioso
 
